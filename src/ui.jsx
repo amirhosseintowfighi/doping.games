@@ -1,50 +1,47 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, X } from 'lucide-react';
+import { TitleMark } from './art.jsx';
 
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
 const BTN = {
-  primary: 'bg-brand-grad text-white shadow-[inset_0_1px_0_rgba(255,255,255,.35),0_10px_30px_-10px_rgba(230,0,18,.8)] hover:brightness-110',
-  ghost: 'bg-white/[0.05] text-zinc-100 shadow-[inset_0_0_0_1px_rgba(255,255,255,.1),inset_0_1px_0_rgba(255,255,255,.08)] hover:bg-white/[0.1] backdrop-blur-xl',
-  outline: 'text-white shadow-[inset_0_0_0_1px_rgba(255,30,39,.5)] hover:bg-brand/15',
-  danger: 'bg-red-500/[0.08] text-red-200 shadow-[inset_0_0_0_1px_rgba(239,68,68,.3)] hover:bg-red-500/20',
-  ok: 'bg-emerald-500/[0.08] text-emerald-300 shadow-[inset_0_0_0_1px_rgba(16,185,129,.3)] hover:bg-emerald-500/20',
+  primary: 'bg-brand text-white hover:bg-white hover:text-black',
+  ghost: 'bg-white/[0.07] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.3)] hover:bg-white hover:text-black',
+  outline: 'text-white shadow-[inset_0_0_0_1.5px_#e60012] hover:bg-brand',
+  danger: 'text-red-300 shadow-[inset_0_0_0_1px_rgba(255,30,39,.6)] hover:bg-brand hover:text-white',
+  ok: 'text-emerald-300 shadow-[inset_0_0_0_1px_rgba(16,185,129,.55)] hover:bg-emerald-500 hover:text-black',
 };
-const SIZE = { sm: 'h-8 px-3.5 text-xs gap-1.5', md: 'h-10 px-5 text-[13px] gap-2', lg: 'h-12 px-7 text-sm gap-2.5' };
-const SQUARE = { sm: 'size-8', md: 'size-10', lg: 'size-12' };
+const SIZE = { sm: 'h-8 px-3.5 text-xs', md: 'h-10 px-5 text-[13px]', lg: 'h-13 px-8 text-[15px]' };
+const SQUARE = { sm: 'h-8 w-9', md: 'h-10 w-11', lg: 'h-13 w-14' };
 
+/** Leaning plate button. The box is skewed to the logo's angle; the label stays upright. */
 export function Btn({ variant = 'primary', size = 'md', icon: Icon, children, className, busy, ...p }) {
   return (
     <button
       type="button"
       {...p}
       disabled={p.disabled || busy}
-      className={cx(
-        'inline-flex shrink-0 items-center justify-center rounded-full font-bold whitespace-nowrap transition duration-200 active:scale-[0.97] disabled:opacity-40',
-        BTN[variant], children == null ? SQUARE[size] : SIZE[size], className,
-      )}
+      className={cx('para inline-flex shrink-0 items-center justify-center font-black whitespace-nowrap transition-colors duration-150 active:translate-x-0.5 disabled:opacity-35', BTN[variant], children == null ? SQUARE[size] : SIZE[size], className)}
     >
-      {busy ? <span className="size-4 animate-spin rounded-full border border-white/30 border-t-white" /> : Icon && <Icon className="size-4" />}
-      {children}
+      <span className="inline-flex items-center gap-2">
+        {busy ? <span className="size-4 animate-spin rounded-full border-2 border-current/30 border-t-current" /> : Icon && <Icon className="size-4" />}
+        {children}
+      </span>
     </button>
   );
 }
 
-/** Frosted panel. `red` adds the crimson key light; `as` swaps the element. */
+/** Cut-glass slab. `red` is the crimson pane used once per screen for the thing that matters. */
 export const Card = ({ className, red, as: As = 'div', ...p }) => (
-  <As {...p} className={cx('relative rounded-2xl', red ? 'glass-red' : 'glass', className)} />
+  <As {...p} className={cx('relative', red ? 'glass-red' : 'glass', className)} />
 );
 
-const TONE = {
-  ok: 'text-emerald-300 shadow-[inset_0_0_0_1px_rgba(16,185,129,.28)] bg-emerald-500/[0.07]',
-  warn: 'text-amber-300 shadow-[inset_0_0_0_1px_rgba(245,158,11,.28)] bg-amber-500/[0.07]',
-  bad: 'text-red-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,.35)] bg-red-500/[0.08]',
-  mute: 'text-zinc-400 shadow-[inset_0_0_0_1px_rgba(255,255,255,.1)] bg-white/[0.03]',
-  brand: 'text-white shadow-[inset_0_0_0_1px_rgba(255,30,39,.5)] bg-brand/[0.12]',
-};
+const TONE = { ok: 'text-emerald-300', warn: 'text-amber-300', bad: 'text-red-400', mute: 'text-zinc-400', brand: 'text-white' };
+const MARK = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-brand2', mute: 'bg-zinc-600', brand: 'bg-brand' };
+/** Status tag: a leaning colour chip and plain text, no outline box. */
 export const Badge = ({ tone = 'mute', icon: Icon, children, className }) => (
-  <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap', TONE[tone], className)}>
-    {Icon && <Icon className="size-3" />}
+  <span className={cx('inline-flex items-center gap-1.5 text-xs font-bold whitespace-nowrap', TONE[tone], className)}>
+    {Icon ? <Icon className="size-3.5" /> : <span className={cx('h-2.5 w-1.5 -skew-x-[14deg]', MARK[tone])} />}
     {children}
   </span>
 );
@@ -53,15 +50,9 @@ export const Mono = ({ className, children, ...p }) => (
   <span dir="ltr" {...p} className={cx('mono', className)}>{children}</span>
 );
 
-export const Dot = ({ tone = 'ok' }) => {
-  const c = tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bg-brand2';
-  return (
-    <span className="relative inline-flex size-1.5">
-      <span className={cx('absolute -inset-1 animate-ping rounded-full opacity-40', c)} />
-      <span className={cx('relative size-1.5 rounded-full', c)} />
-    </span>
-  );
-};
+export const Dot = ({ tone = 'ok' }) => (
+  <span className={cx('inline-block h-2.5 w-1.5 shrink-0 -skew-x-[14deg] animate-pulse', tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bg-brand2')} />
+);
 
 export async function copyText(text) {
   try {
@@ -106,10 +97,10 @@ export function CopyBtn({ text, label, size = 'sm', variant = 'ghost', className
 
 export function Progress({ value, tone, className, h = 'h-1' }) {
   const v = Math.max(0, Math.min(100, value));
-  const color = tone ?? (v >= 90 ? 'bg-brand2 shadow-[0_0_10px_#ff1e27]' : v >= 70 ? 'bg-warn shadow-[0_0_10px_#f59e0b]' : 'bg-ok shadow-[0_0_10px_#10b981]');
+  const color = tone ?? (v >= 90 ? 'bg-brand2' : v >= 70 ? 'bg-warn' : 'bg-white');
   return (
-    <div className={cx('w-full rounded-full bg-white/[0.07]', h, className)} dir="ltr">
-      <div className={cx('h-full rounded-full transition-[width] duration-700', color)} style={{ width: `${v}%` }} />
+    <div className={cx('w-full bg-white/[0.12]', h, className)} dir="ltr">
+      <div className={cx('h-full transition-[width] duration-700', color)} style={{ width: `${v}%` }} />
     </div>
   );
 }
@@ -124,11 +115,11 @@ function useEscape(open, onClose) {
 }
 
 const Head = ({ title, icon: Icon, onClose }) => (
-  <div className="flex items-center gap-3 px-6 pt-5 pb-4">
-    {Icon && <span className="well grid size-10 place-items-center rounded-full text-brand2"><Icon className="size-[18px]" /></span>}
-    <h3 className="min-w-0 flex-1 truncate text-base font-black">{title}</h3>
-    <button type="button" onClick={onClose} aria-label="بستن" className="grid size-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-white">
-      <X className="size-4" />
+  <div className="flex items-center gap-3 px-6 pt-6 pb-4 sm:px-8">
+    {Icon && <Icon className="size-5 shrink-0 text-brand2" />}
+    <h3 className="min-w-0 flex-1 truncate text-xl font-black">{title}</h3>
+    <button type="button" onClick={onClose} aria-label="بستن" className="grid size-9 place-items-center text-zinc-400 transition hover:bg-white hover:text-black">
+      <X className="size-5" />
     </button>
   </div>
 );
@@ -138,12 +129,11 @@ export function Modal({ open, onClose, title, icon, children, wide, footer }) {
   if (!open) return null;
   return (
     <div className="gutter fixed inset-0 z-50 flex items-center justify-center py-6" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />
-      <div className={cx('glass animate-rise relative flex max-h-full w-full flex-col rounded-[28px]', wide ? 'max-w-3xl' : 'max-w-lg')}>
+      <div className="absolute inset-0 bg-black/75" onClick={onClose} />
+      <div className={cx('glass animate-rise relative flex max-h-full w-full flex-col', wide ? 'max-w-3xl' : 'max-w-lg')}>
         <Head title={title} icon={icon} onClose={onClose} />
-        <div className="hairline mx-6" />
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="flex flex-wrap items-center justify-end gap-2 px-6 pt-2 pb-5">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 sm:px-8">{children}</div>
+        {footer && <div className="flex flex-wrap items-center justify-end gap-3 px-6 pb-7 sm:px-8">{footer}</div>}
       </div>
     </div>
   );
@@ -154,11 +144,10 @@ export function Drawer({ open, onClose, title, icon, children }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />
-      <div className="glass animate-rise absolute inset-y-3 left-3 flex w-[calc(100%-1.5rem)] max-w-2xl flex-col rounded-[28px]">
+      <div className="absolute inset-0 bg-black/75" onClick={onClose} />
+      <div className="glass animate-rise absolute inset-y-0 left-0 flex w-full max-w-2xl flex-col">
         <Head title={title} icon={icon} onClose={onClose} />
-        <div className="hairline mx-6" />
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8 sm:px-8">{children}</div>
       </div>
     </div>
   );
@@ -166,105 +155,87 @@ export function Drawer({ open, onClose, title, icon, children }) {
 
 export function Field({ label, hint, error, children, className }) {
   return (
-    <label className={cx('flex min-w-0 flex-col gap-2', className)}>
-      <span className="text-xs text-zinc-400">{label}</span>
+    <label className={cx('flex min-w-0 flex-col gap-1.5', className)}>
+      <span className="text-xs font-bold text-zinc-400">{label}</span>
       {children}
-      {error ? <span className="text-xs text-red-400">{error}</span> : hint && <span className="text-xs text-zinc-600">{hint}</span>}
+      {error ? <span className="text-xs text-red-400">{error}</span> : hint && <span className="text-xs text-zinc-500">{hint}</span>}
     </label>
   );
 }
 
+/** Leaning switch: the slider is a bar, like everything else. */
 export function Toggle({ checked, onChange, label }) {
   return (
     <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      dir="ltr"
-      className={cx('relative h-6 w-11 shrink-0 rounded-full transition duration-300', checked ? 'bg-emerald-500/80 shadow-[0_0_16px_-2px_#10b981]' : 'bg-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,.1)]')}
+      type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} dir="ltr"
+      className={cx('relative h-6 w-12 shrink-0 -skew-x-[14deg] transition-colors duration-200', checked ? 'bg-ok' : 'bg-white/15')}
     >
-      <span className={cx('absolute top-[3px] size-[18px] rounded-full bg-white shadow transition-all duration-300', checked ? 'left-[23px]' : 'left-[3px]')} />
+      <span className={cx('absolute inset-y-1 w-4 transition-all duration-200', checked ? 'left-7 bg-black' : 'left-1 bg-white')} />
     </button>
   );
 }
 
-/** Quiet segmented control: the active item lifts onto glass, a crimson tick marks it. */
+const tabCls = (on) => cx('para shrink-0 px-4 py-2 text-[13px] font-bold whitespace-nowrap transition-colors duration-150', on ? 'bg-white text-black' : 'text-zinc-400 hover:text-white');
+
 export function Tabs({ tabs, value, onChange, className }) {
   return (
-    <div className={cx('flex gap-1 overflow-x-auto', className)} role="tablist">
-      {tabs.map((t) => {
-        const on = value === t.id;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            onClick={() => onChange(t.id)}
-            className={cx('inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-[13px] whitespace-nowrap transition', on ? 'bg-white/[0.08] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.12)]' : 'text-zinc-500 hover:text-white')}
-          >
-            {t.icon && <t.icon className={cx('size-4', on && 'text-brand2')} />}
-            {t.label}
-          </button>
-        );
-      })}
+    <div className={cx('flex gap-1 overflow-x-auto px-1', className)} role="tablist">
+      {tabs.map((t) => (
+        <button key={t.id} type="button" role="tab" aria-selected={value === t.id} onClick={() => onChange(t.id)} className={tabCls(value === t.id)}>
+          <span className="inline-flex items-center gap-2">{t.icon && <t.icon className="size-4" />}{t.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
 
-/** Side rail on desktop, scrollable strip on phones. Used by the gamer panel and the admin center. */
+/** Section index down the side on desktop, a strip of leaning tabs on phones. No box around it. */
 export function RailLayout({ tabs, value, onChange, children, foot }) {
   return (
-    <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:gap-8">
-      <div className="min-w-0 lg:sticky lg:top-28 lg:self-start">
-        <nav className="glass relative flex gap-1 overflow-x-auto rounded-2xl p-2 lg:flex-col" role="tablist">
+    <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[210px_minmax(0,1fr)] lg:gap-12">
+      <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+        <nav className="flex gap-1 overflow-x-auto px-1 lg:flex-col lg:gap-0 lg:px-0" role="tablist">
           {tabs.map((t) => {
             const on = value === t.id;
             return (
               <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                onClick={() => onChange(t.id)}
-                className={cx('flex shrink-0 items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13px] whitespace-nowrap transition', on ? 'bg-white/[0.07] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,.08)]' : 'text-zinc-500 hover:bg-white/[0.03] hover:text-white')}
+                key={t.id} type="button" role="tab" aria-selected={on} onClick={() => onChange(t.id)}
+                className={cx(
+                  'group flex shrink-0 items-center gap-3 px-4 py-2 text-[13px] font-bold whitespace-nowrap transition-colors duration-150 max-lg:[transform:skewX(var(--lean))] lg:border-s-2 lg:py-3 lg:text-[15px]',
+                  on ? 'text-white max-lg:bg-white max-lg:text-black lg:border-brand' : 'text-zinc-500 hover:text-white lg:border-white/10',
+                )}
               >
-                <t.icon className={cx('size-4', on && 'text-brand2 drop-shadow-[0_0_6px_#ff1e27]')} />
-                <span className="flex-1 text-start">{t.label}</span>
-                {t.count != null && <span className="mono text-[11px] text-zinc-600">{t.count}</span>}
+                <span className="flex flex-1 items-center gap-3 text-start max-lg:[transform:skewX(calc(var(--lean)*-1))]">
+                  <t.icon className={cx('size-4', on && 'lg:text-brand2')} />
+                  <span className="flex-1">{t.label}</span>
+                  {t.count != null && <span className="mono text-xs italic opacity-50">{t.count}</span>}
+                </span>
               </button>
             );
           })}
         </nav>
-        {foot && <div className="mt-4 hidden lg:block">{foot}</div>}
+        {foot && <div className="mt-8 hidden lg:block">{foot}</div>}
       </div>
       <div className="min-w-0">{children}</div>
     </div>
   );
 }
 
-export const SectionTitle = ({ kicker, eyebrow, title, desc, action }) => (
+export const SectionTitle = ({ title, desc, action }) => (
   <div className="flex flex-wrap items-end justify-between gap-6">
     <div className="min-w-0">
-      {eyebrow && <div className="eyebrow mb-3">{eyebrow}</div>}
-      {kicker && <div className="mb-2 text-xs text-brand2">{kicker}</div>}
-      <h2 className="text-3xl leading-tight font-light sm:text-[2.6rem]">{title}</h2>
-      {desc && <p className="mt-3 max-w-xl text-sm text-zinc-400">{desc}</p>}
+      <h2 className="flex items-center gap-4 text-4xl leading-tight font-black sm:text-6xl"><TitleMark />{title}</h2>
+      {desc && <p className="mt-4 max-w-xl text-[15px] text-zinc-400">{desc}</p>}
     </div>
     {action}
   </div>
 );
 
-/** HUD readout: label above, value below, no icon box. */
-export const Stat = ({ label, value, sub, icon: Icon, tone = 'text-white' }) => (
-  <Card className="p-5">
-    <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
-      <span className="truncate">{label}</span>
-      {Icon && <Icon className="size-4 shrink-0 text-zinc-600" />}
-    </div>
-    <div className={cx('mt-2 truncate text-3xl font-light', tone)}>{value}</div>
-    {sub && <div className="mt-1 truncate text-[11px] text-zinc-600">{sub}</div>}
-  </Card>
+/** A figure on a rule: label, then a heavy italic number. Not a card. */
+export const Stat = ({ label, value, sub, tone = 'text-white' }) => (
+  <div className="min-w-0 border-t-2 border-white/15 pt-3">
+    <div className="truncate text-xs font-bold text-zinc-400">{label}</div>
+    <div className={cx('mt-1 truncate text-4xl font-black italic sm:text-5xl', tone)}>{value}</div>
+    {sub && <div className="truncate text-xs text-zinc-500">{sub}</div>}
+  </div>
 );

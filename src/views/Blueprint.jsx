@@ -106,14 +106,13 @@ export default function Blueprint() {
   return (
     <div className="gutter mx-auto max-w-7xl pt-14">
       <SectionTitle
-        eyebrow="Backend · MikroTik API · Security"
-        title="نقشه فنی دوپینگ"
+                title="نقشه فنی دوپینگ"
         desc="کد این بخش همون فایل‌های پوشه backend در مخزن پروژه‌ست: TypeScript برای Next.js App Router، PostgreSQL و Redis."
         action={<Badge tone="ok" icon={ShieldCheck}><Mono>tsc --strict</Mono> بدون خطا</Badge>}
       />
 
       <Card className="mt-10 overflow-hidden p-6">
-        <RouteMap exit="mct" ping={28} ispPing={145} className="-mx-6 -mt-6 mb-2 block w-[calc(100%+3rem)] max-w-none" />
+        <RouteMap exit="mct" className="mb-4 block w-full" />
         <div className="text-xs font-black text-silver">مسیر داده (Data Plane)</div>
         <div className="mt-3 flex flex-wrap items-stretch gap-2">
           {FLOW.map((n, i) => (
@@ -127,10 +126,10 @@ export default function Blueprint() {
         <div className="mt-3 flex flex-wrap gap-2">{CONTROL.map((n) => <Node key={n.title} n={n} />)}</div>
       </Card>
 
-      <h3 className="mt-16 text-2xl font-light">دفاع در عمق</h3>
+      <h3 className="mt-20 text-4xl font-black">دفاع در عمق</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {DEFENSE.map((d) => (
-          <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group relative rounded-2xl p-5 text-start transition duration-500 hover:-translate-y-0.5">
+          <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group relative p-6 text-start" style={{ '--cut': '14px' }}>
             <div className="flex items-center gap-2.5 text-[15px] font-black"><d.icon className="size-4 text-brand2" />{d.title}</div>
             <p className="mt-2 text-xs leading-6 text-silver">{d.text}</p>
             <Mono className="mt-2 block truncate text-[11px] text-zinc-500 group-hover:text-brand2">{d.file}</Mono>
@@ -150,7 +149,7 @@ export default function Blueprint() {
                   dir="ltr"
                   onClick={() => setPath(f.path)}
                   aria-current={path === f.path ? 'true' : undefined}
-                  className={cx('mono flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition', path === f.path ? 'bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.1)]' : 'text-zinc-500 hover:bg-white/[0.03] hover:text-white')}
+                  className={cx('mono flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition', path === f.path ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/[0.03] hover:text-white')}
                 >
                   <FileCode2 className="size-3.5 shrink-0" />
                   <span className="truncate">{f.path.split('/').slice(-2).join('/')}</span>

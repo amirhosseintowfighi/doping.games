@@ -5,7 +5,7 @@ import {
   Link2, Plus, QrCode, Receipt, RefreshCw, Send, ShieldCheck, Trash2, Unlink, Wallet, Wifi, Zap,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
-import { TickRing, Wave } from '../art.jsx';
+import { RevBar } from '../art.jsx';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
 import { daysLeft, DNS, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, WG, wgKey } from '../data.js';
 
@@ -37,7 +37,7 @@ function PayFromWallet({ open, onClose, title, icon, price, children, onPaid, ct
       }
     >
       {children}
-      <div className="mt-4 flex items-center justify-between well rounded-2xl px-4 py-3 text-sm">
+      <div className="mt-4 flex items-center justify-between well px-4 py-3 text-sm">
         <span className="flex items-center gap-2 text-silver"><Wallet className="size-4" /> موجودی کیف پول</span>
         <span className={cx('font-black', short && 'text-brand2')}>{toman(s.wallet)}</span>
       </div>
@@ -60,6 +60,7 @@ function Dashboard({ setTab }) {
   const tier = unlimited ? 'inf' : me.quota / GB;
   const renewPrice = priceOf(s.pricing, { kind: me.plan, tier: s.pricing.ping[tier] ? tier : 15, slots: 1, months: 1 }).total;
   const extraPrice = pack * s.pricing.extraPerGb;
+  const cells = unlimited ? 20 : me.quota / GB <= 30 ? me.quota / GB : 20;
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_290px]">
@@ -71,54 +72,53 @@ function Dashboard({ setTab }) {
             <Badge tone={tone}>{st}</Badge>
           </div>
         </div>
-        <div className="mt-6 grid items-center gap-8 md:grid-cols-[270px_minmax(0,1fr)]">
-          <TickRing pct={unlimited ? 3 : pct} className="mx-auto w-full max-w-[280px]">
-            <div>
-              <div className="eyebrow">Remaining</div>
-              <Mono className="mt-1 block text-6xl leading-none font-extralight">{unlimited ? '∞' : gb(Math.max(0, me.quota - used))}</Mono>
-              <Mono className="mt-2 block text-xs text-zinc-500">{unlimited ? 'UNLIMITED' : `GB / ${me.quota / GB} GB`}</Mono>
-              <div className="mt-1 text-[11px] text-zinc-500">حجم باقی‌مانده</div>
-            </div>
-          </TickRing>
-          <div className="min-w-0">
-            <p className="text-[13px] leading-7 text-zinc-300">
-              {unlimited ? (
-                <>اشتراک زمانی بدون سقف حجم · <Mono className="font-bold">{gb(used)} GB</Mono> مصرف شده</>
-              ) : (
-                <><Mono className="font-bold text-ok">{gb(Math.max(0, me.quota - used))} GB</Mono> باقی‌مانده از <Mono className="font-bold">{me.quota / GB} GB</Mono> — <Mono className="font-bold">{gb(used)} GB</Mono> مصرف شده</>
-              )}
-            </p>
-            {!unlimited && <Progress value={pct} className="mt-3" h="h-2.5" />}
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="well rounded-2xl p-3">
-                <div className="flex items-center gap-1.5 text-xs text-silver"><ArrowDown className="size-3.5 text-ok" /> دانلود</div>
-                <Mono className="text-lg font-black">{gb(me.down)} <span className="text-xs text-silver">GB</span></Mono>
-              </div>
-              <div className="well rounded-2xl p-3">
-                <div className="flex items-center gap-1.5 text-xs text-silver"><ArrowUp className="size-3.5 text-warn" /> آپلود</div>
-                <Mono className="text-lg font-black">{gb(me.up)} <span className="text-xs text-silver">GB</span></Mono>
-              </div>
-            </div>
-            <p className="mt-3 flex items-center gap-1.5 text-[11px] text-zinc-500">
-              <RefreshCw className="size-3 shrink-0" /> <span>همگام با Simple Queue میکروتیک (<Mono>dp-{me.id}</Mono>) هر ۵ دقیقه</span>
-            </p>
+        <div className="mt-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-2" dir="ltr">
+          <div className="flex items-baseline gap-3">
+            <Mono className="text-[clamp(4.5rem,12vw,8.5rem)] leading-[0.9] font-black italic">{unlimited ? '∞' : gb(Math.max(0, me.quota - used))}</Mono>
+            <Mono className="text-2xl font-black italic text-white/70">GB</Mono>
           </div>
+          <p dir="rtl" className="pb-2 text-sm leading-7 text-white/85">
+            {unlimited ? (
+              <>اشتراک زمانی بدون سقف حجم · <Mono className="font-bold">{gb(used)} GB</Mono> مصرف شده</>
+            ) : (
+              <><Mono className="font-bold">{gb(Math.max(0, me.quota - used))} GB</Mono> باقی‌مانده از <Mono className="font-bold">{me.quota / GB} GB</Mono> — <Mono className="font-bold">{gb(used)} GB</Mono> مصرف شده</>
+            )}
+          </p>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2 border-t border-white/8 pt-5">
+        <RevBar cells={cells} left={unlimited ? cells : Math.ceil(((me.quota - used) / me.quota) * cells)} className="mt-5 h-16 sm:h-20" />
+        <div className="mt-2 flex justify-between text-xs text-white/60" dir="ltr">
+          <Mono>{unlimited ? 'UNLIMITED' : `${me.quota / GB} GB`}</Mono>
+          <span dir="rtl">{unlimited ? 'بدون سقف' : `هر نوار = ${fa(me.quota / GB / cells)} گیگ`}</span>
+          <Mono>0</Mono>
+        </div>
+        <dl className="mt-7 grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-[auto_auto_1fr]">
+          <div className="border-t-2 border-white/30 pt-2">
+            <dt className="flex items-center gap-1.5 text-xs text-white/70"><ArrowDown className="size-3.5" /> دانلود</dt>
+            <dd><Mono className="text-2xl font-black italic">{gb(me.down)}</Mono> <Mono className="text-xs text-white/60">GB</Mono></dd>
+          </div>
+          <div className="border-t-2 border-white/30 pt-2">
+            <dt className="flex items-center gap-1.5 text-xs text-white/70"><ArrowUp className="size-3.5" /> آپلود</dt>
+            <dd><Mono className="text-2xl font-black italic">{gb(me.up)}</Mono> <Mono className="text-xs text-white/60">GB</Mono></dd>
+          </div>
+          <p className="col-span-2 flex items-center gap-1.5 self-end text-xs text-white/60 sm:col-span-1 sm:justify-end">
+            <RefreshCw className="size-3 shrink-0" /> <span>همگام با Simple Queue میکروتیک (<Mono>dp-{me.id}</Mono>) هر ۵ دقیقه</span>
+          </p>
+        </dl>
+        <div className="mt-8 flex flex-wrap gap-4 ps-2">
           <Btn icon={Plus} onClick={() => setExtra(true)} disabled={unlimited}>خرید حجم اضافه (ترافیک مازاد)</Btn>
           <Btn variant="outline" icon={RefreshCw} onClick={() => setRenew(true)}>تمدید یک‌کلیکی</Btn>
         </div>
       </Card>
 
-      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
+      <div className="grid min-w-0 grid-cols-1 content-start items-start gap-4 sm:grid-cols-2 xl:grid-cols-1">
         <Card className="p-6">
           <div className="flex items-center gap-2 text-xs text-silver"><CalendarClock className="size-4" /> روزهای باقی‌مانده</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className={cx('text-7xl leading-none font-extralight', days <= 3 ? 'text-brand2' : days <= 7 ? 'text-warn' : 'text-white')}>{fa(days)}</span>
+            <span className={cx('text-7xl leading-none font-black', days <= 3 ? 'text-brand2' : days <= 7 ? 'text-warn' : 'text-white')}>{fa(days)}</span>
             <span className="text-silver">روز</span>
           </div>
           <div className="mt-1 text-xs text-zinc-500">پایان اشتراک: {faDate(me.expires)}</div>
-          <Progress value={(days / 30) * 100} tone="bg-white/70" className="mt-3" />
+          <Progress value={(days / 30) * 100} tone="bg-white" className="mt-4" h="h-1.5" />
         </Card>
         <Card className="p-6">
           <div className="flex items-center justify-between">
@@ -153,7 +153,7 @@ function Dashboard({ setTab }) {
         <p className="text-sm text-silver">حجم اضافه تا پایان همین دوره اعتبار داره و بلافاصله روی صف میکروتیک اعمال می‌شه.</p>
         <div className="mt-4 grid grid-cols-4 gap-2">
           {[5, 10, 20, 50].map((g) => (
-            <button key={g} type="button" onClick={() => setPack(g)} aria-pressed={pack === g} className={cx('relative rounded-2xl py-3 text-center transition', pack === g ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
+            <button key={g} type="button" onClick={() => setPack(g)} aria-pressed={pack === g} className={cx('relative rounded-2xl py-3 text-center transition', pack === g ? 'glass-red' : 'well hover:bg-white/[0.04]')} style={{ '--cut': '10px' }}>
               <Mono className="block text-lg font-black">+{g}</Mono>
               <Mono className="text-[10px] text-silver">GB</Mono>
             </button>
@@ -252,7 +252,7 @@ PersistentKeepalive = 25
           <Mono className="text-xs text-silver">doping-thr1.conf</Mono>
         </div>
         <div className="relative mt-4">
-          <pre dir="ltr" className="mono overflow-x-auto well rounded-2xl p-4 text-left text-xs leading-6 text-zinc-300">{show ? conf : masked}</pre>
+          <pre dir="ltr" className="mono overflow-x-auto well p-4 text-left text-xs leading-6 text-zinc-300">{show ? conf : masked}</pre>
           <button type="button" onClick={() => setShow(!show)} className="absolute top-2 right-2 flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20">
             {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />} {show ? 'مخفی کردن کلید' : 'نمایش کلید'}
           </button>
@@ -269,7 +269,7 @@ PersistentKeepalive = 25
           <h3 className="font-black">مشخصات اتصال</h3>
           <div className="mt-3 space-y-2">
             {[['Endpoint', WG.endpoint], ['AllowedIPs', WG.allowed], ['Public Key', WG.serverKey], ['Address', `${me.ip}/32`]].map(([label, v]) => (
-              <div key={label} className="flex items-center gap-2 well rounded-2xl py-1 ps-3 pe-1">
+              <div key={label} className="flex items-center gap-2 well py-1 ps-3 pe-1">
                 <div className="min-w-0 flex-1">
                   <Mono className="block text-[10px] text-zinc-500">{label}</Mono>
                   <Mono className="block truncate text-xs font-bold">{v}</Mono>
@@ -351,9 +351,9 @@ function SmartDns() {
       <Card red className="p-5 sm:p-6">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Globe className="size-4 text-brand2" /> ثبت آی‌پی برای DNS</h3>
         <p className="mt-2 text-xs leading-6 text-silver">DNS دوپینگ فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. هر بار آی‌پی اینترنتت عوض شد، همین دکمه رو بزن.</p>
-        <div className="mt-4 well rounded-2xl p-4 text-center">
+        <div className="mt-4 well p-4 text-center">
           <div className="text-xs text-silver">آی‌پی عمومی فعلی تو</div>
-          <Mono className="mt-2 block text-4xl font-extralight">{detected.ip ?? '…'}</Mono>
+          <Mono className="mt-2 block text-4xl font-black italic">{detected.ip ?? '…'}</Mono>
           {detected.ip && !detected.real && <div className="mt-1 text-[11px] text-zinc-500">آی‌پی نمونه (تشخیص خودکار در این محیط در دسترس نیست)</div>}
         </div>
         <Btn size="lg" className="mt-4 w-full" icon={ShieldCheck} busy={busy} disabled={!detected.ip || already} onClick={() => register(detected.ip, 'ثبت خودکار')}>
@@ -373,7 +373,7 @@ function SmartDns() {
           <h3 className="font-black">آدرس‌های DNS</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {[['Primary DNS', DNS.primary], ['Secondary DNS', DNS.secondary]].map(([l, v]) => (
-              <div key={l} className="flex items-center gap-2 well rounded-2xl py-1.5 ps-3 pe-1.5">
+              <div key={l} className="flex items-center gap-2 well py-1.5 ps-3 pe-1.5">
                 <div className="min-w-0 flex-1">
                   <Mono className="block text-[10px] text-zinc-500">{l}</Mono>
                   <Mono className="block text-base font-black">{v}</Mono>
@@ -391,7 +391,7 @@ function SmartDns() {
           </div>
           <ul className="mt-3 space-y-2">
             {s.dnsIps.map((x) => (
-              <li key={x.ip} className="flex items-center gap-3 well rounded-2xl px-3 py-2">
+              <li key={x.ip} className="flex items-center gap-3 well px-3 py-2">
                 <Dot />
                 <div className="min-w-0 flex-1">
                   <Mono className="block text-sm font-bold">{x.ip}</Mono>
@@ -405,7 +405,7 @@ function SmartDns() {
                 </button>
               </li>
             ))}
-            {!s.dnsIps.length && <li className="rounded-2xl border border-dashed border-white/10 p-5 text-center text-xs text-silver">هنوز آی‌پی‌ای ثبت نکردی. تا ثبت نکنی DNS جواب نمی‌ده.</li>}
+            {!s.dnsIps.length && <li className="border border-dashed border-white/20 p-5 text-center text-xs text-silver">هنوز آی‌پی‌ای ثبت نکردی. تا ثبت نکنی DNS جواب نمی‌ده.</li>}
           </ul>
         </Card>
       </div>
@@ -462,7 +462,7 @@ function Vip() {
         </div>
         <ul className="mt-4 space-y-2">
           {PERKS.map(([key, title, desc]) => (
-            <li key={key} className="flex items-center gap-3 well rounded-2xl px-4 py-3">
+            <li key={key} className="flex items-center gap-3 well px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold">{title}</div>
                 <div className="text-xs text-silver">{desc}</div>
@@ -511,7 +511,7 @@ function Billing() {
       <Card red className="flex flex-col p-5 sm:p-6">
         <div className="flex items-center gap-2 text-xs text-silver"><Wallet className="size-4" /> موجودی کیف پول</div>
         <div className="mt-2 flex flex-wrap items-baseline gap-2">
-          <span className="text-6xl leading-none font-extralight">{fa(s.wallet)}</span><span className="text-silver">تومان</span>
+          <span className="text-6xl leading-none font-black">{fa(s.wallet)}</span><span className="text-silver">تومان</span>
         </div>
         <p className="mt-3 text-xs leading-6 text-silver">با کیف پول، تمدید و خرید حجم اضافه یک‌کلیکی انجام می‌شه.</p>
         <Btn className="mt-auto" icon={Plus} onClick={() => setOpen(true)}>افزایش موجودی</Btn>
@@ -545,7 +545,7 @@ function Billing() {
       >
         <div className="grid grid-cols-4 gap-2">
           {[50_000, 100_000, 200_000, 500_000].map((a) => (
-            <button key={a} type="button" onClick={() => setAmount(a)} aria-pressed={amount === a} className={cx('relative rounded-2xl py-2.5 text-xs font-bold transition', amount === a ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
+            <button key={a} type="button" onClick={() => setAmount(a)} aria-pressed={amount === a} className={cx('relative rounded-2xl py-2.5 text-xs font-bold transition', amount === a ? 'glass-red' : 'well hover:bg-white/[0.04]')} style={{ '--cut': '10px' }}>
               {fa(a / 1000)} هزار
             </button>
           ))}
@@ -556,7 +556,7 @@ function Billing() {
         <div className="mt-4 text-xs font-bold text-silver">درگاه پرداخت</div>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {gws.map((g) => (
-            <button key={g.id} type="button" onClick={() => setGw(g.id)} aria-pressed={gw === g.id} className={cx('relative rounded-2xl p-3 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
+            <button key={g.id} type="button" onClick={() => setGw(g.id)} aria-pressed={gw === g.id} className={cx('relative rounded-2xl p-3 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')} style={{ '--cut': '10px' }}>
               <span className="block text-sm font-bold">{g.name}</span>
               <span className="block text-[11px] text-silver">{g.kind}</span>
             </button>
@@ -604,7 +604,7 @@ function Tickets() {
         <ul className="mt-3 space-y-2">
           {s.tickets.map((x) => (
             <li key={x.id}>
-              <button type="button" onClick={() => setSel(x.id)} className={cx('w-full relative rounded-2xl p-3 text-start transition', sel === x.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
+              <button type="button" onClick={() => setSel(x.id)} className={cx('w-full relative rounded-2xl p-3 text-start transition', sel === x.id ? 'glass-red' : 'well hover:bg-white/[0.04]')} style={{ '--cut': '10px' }}>
                 <div className="flex items-center justify-between gap-2">
                   <Mono className="text-[11px] text-silver">{x.id}</Mono>
                   <Badge tone={T_STATUS[x.status][1]}>{T_STATUS[x.status][0]}</Badge>
@@ -677,15 +677,14 @@ export default function UserPanel() {
   const Current = TABS.find((t) => t.id === tab).C;
   return (
     <div className="gutter mx-auto max-w-7xl pt-14">
-      <div className="eyebrow">Gamer panel · {me.email}</div>
-      <h1 className="mt-4 text-4xl font-extralight sm:text-5xl">سلام آرش، <span className="font-black">آماده‌ای؟</span></h1>
+      <h1 className="sliced inline-block text-5xl font-black sm:text-7xl">سلام آرش</h1>
+      <p className="mt-3 text-sm text-zinc-400">پنل گیمر · <Mono>{me.email}</Mono></p>
       <RailLayout
         tabs={TABS} value={tab} onChange={setTab}
         foot={
-          <div className="well rounded-2xl p-4">
-            <div className="flex items-center justify-between"><span className="eyebrow">Tunnel</span><Mono className="text-[11px] text-ok">{me.peer && me.online ? 'UP' : 'DOWN'}</Mono></div>
-            <Wave seed={s.tick} jitter={me.peer && me.online ? 3 : 0} color={me.peer && me.online ? '#10B981' : '#52525B'} className="mt-2 h-7 w-full" />
-            <Mono className="mt-1 block text-[11px] text-zinc-500">{me.ip}/32 · THR-EDGE-01</Mono>
+          <div className="border-t border-white/10 pt-4 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 font-bold text-zinc-300">{me.peer && me.online ? <><Dot /> تانل وصله</> : <><Dot tone="bad" /> تانل قطعه</>}</div>
+            <Mono className="mt-1 block">{me.ip}/32 · THR-EDGE-01</Mono>
           </div>
         }
       >

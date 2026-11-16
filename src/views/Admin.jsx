@@ -118,7 +118,7 @@ function SyncModal({ router, onClose }) {
       open onClose={onClose} wide icon={RefreshCw} title={`تست اتصال و سینک · ${router.name}`}
       footer={<><Btn variant="ghost" icon={RotateCcw} disabled={!done} onClick={() => setRun((n) => n + 1)}>اجرای دوباره</Btn><Btn onClick={onClose}>بستن</Btn></>}
     >
-      <div dir="ltr" className="mono min-h-64 well rounded-2xl p-4 text-left text-xs leading-6" aria-live="polite">
+      <div dir="ltr" className="mono min-h-64 well p-4 text-left text-xs leading-6" aria-live="polite">
         {lines.map((l, i) => (
           <div key={i} className={cx(l.tone === 'ok' && 'text-ok', l.tone === 'bad' && 'text-brand2', l.tone === 'dim' && 'text-silver', l.tone === 'out' && 'text-white')}>
             <span className="text-zinc-600">{l.at} </span>{l.text}
@@ -137,7 +137,7 @@ function Routers() {
   const [del, setDel] = useState(null);
   const group = (role, title) => (
     <div>
-      <div className="mb-4 flex items-center gap-3"><span className="text-sm font-black">{title}</span><span className="hairline flex-1" /></div>
+      <div className="mb-4 flex items-center gap-3"><span className="text-xl font-black">{title}</span><span className="hairline flex-1" /></div>
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
         {s.routers.filter((r) => r.role === role).map((r) => {
           const on = r.status === 'online';
@@ -145,8 +145,7 @@ function Routers() {
             <Card key={r.id} red={!on} className="flex flex-col gap-5 p-6">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="eyebrow">{r.role === 'entry' ? 'Entry · Iran' : 'Exit · Abroad'}</span>
-                  <Mono className="mt-1 block truncate text-xl font-light">{r.name}</Mono>
+                  <Mono className="block truncate text-2xl font-black italic">{r.name}</Mono>
                   <div className="truncate text-xs text-silver">{r.city}</div>
                 </div>
                 <Badge tone={on ? 'ok' : 'bad'}>{on ? <><Dot /> Online</> : 'Offline'}</Badge>
@@ -159,13 +158,13 @@ function Routers() {
                   </div>
                 ))}
               </dl>
-              <div className="grid grid-cols-2 gap-6 px-4">
+              <div className="grid grid-cols-2 gap-6">
                 <ArcMeter label="CPU" value={on ? r.cpu : 0} />
                 <ArcMeter label="RAM" value={on ? r.ram : 0} />
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
                 {[['WG Peers', r.peers], ['Queues', r.queues], ['Handshake', on ? `${r.handshake}s` : '—']].map(([k, v]) => (
-                  <div key={k} className="well rounded-xl py-2">
+                  <div key={k} className="well py-2">
                     <Mono className={cx('block text-sm font-black', k === 'Handshake' && on && (r.handshake < 120 ? 'text-ok' : 'text-warn'))}>{v}</Mono>
                     <Mono className="text-[10px] text-silver">{k}</Mono>
                   </div>
@@ -195,13 +194,13 @@ function Routers() {
       </div>
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between px-6 pt-5">
-          <span className="eyebrow">Cluster topology · live</span>
+          <span className="text-sm font-black">توپولوژی زنده کلاستر</span>
           <Badge tone={s.routers.every((r) => r.status === 'online') ? 'ok' : 'bad'}><Dot tone={s.routers.every((r) => r.status === 'online') ? 'ok' : 'bad'} /> {fa(s.routers.filter((r) => r.status === 'online').length)} از {fa(s.routers.length)} نود در مدار</Badge>
         </div>
-        <RouteMap
-          mode="topology" className="block w-full"
+        <div className="overflow-x-auto"><RouteMap
+          mode="topology" className="block w-full min-w-[620px]"
           status={Object.fromEntries(s.routers.filter((r) => /^(THR|SHZ|MCT|DXB|FRA)/.test(r.name)).map((r) => [r.name.slice(0, 3).toLowerCase(), { tone: r.status !== 'online' ? 'bad' : r.cpu >= 85 ? 'warn' : 'ok', sub: r.status === 'online' ? `${r.peers} peers · ${r.cpu}%` : 'OFFLINE' }]))}
-        />
+        /></div>
       </Card>
       {group('entry', 'روترهای ورودی ایران (Entry)')}
       {group('exit', 'روترهای خروجی عمان / امارات / اروپا (Exit)')}
@@ -226,7 +225,7 @@ function Raw({ u, onClose }) {
   };
   return (
     <Modal open onClose={onClose} wide icon={Code2} title={`MikroTik Raw Rule · ${u.username}`}>
-      <pre dir="ltr" className="mono overflow-x-auto well rounded-2xl p-4 text-left text-xs leading-6 text-zinc-300">{JSON.stringify(raw, null, 2)}</pre>
+      <pre dir="ltr" className="mono overflow-x-auto well p-4 text-left text-xs leading-6 text-zinc-300">{JSON.stringify(raw, null, 2)}</pre>
       <p className="mt-3 text-xs text-silver">خروجی خام REST از <Mono>THR-EDGE-01</Mono>. شمارنده <Mono>bytes</Mono> به‌صورت <Mono>upload/download</Mono> است.</p>
     </Modal>
   );
@@ -270,7 +269,7 @@ function UsersTable() {
         </div>
         <div className="flex gap-1.5 overflow-x-auto">
           {[['all', 'همه'], ['active', 'Active'], ['quota', 'Quota Exceeded'], ['expired', 'Expired'], ['disabled', 'Disabled']].map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id} className={cx('shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold whitespace-nowrap', filter === id ? 'bg-white/[0.1] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.14)]' : 'text-zinc-500 hover:text-white')}>
+            <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id} className={cx('shrink-0 px-3.5 py-1.5 text-xs font-bold whitespace-nowrap', filter === id ? 'bg-white text-black' : 'text-zinc-500 hover:text-white')}>
               {label} <Mono className="opacity-60">{id === 'all' ? s.users.length : s.users.filter((u) => u.status === id).length}</Mono>
             </button>
           ))}
@@ -405,7 +404,7 @@ function Rcon({ id, onClose }) {
     <Drawer open onClose={onClose} icon={Terminal} title={`RCON · ${v.name}`}>
       <div className="grid grid-cols-3 gap-2 text-center">
         {[['Map', v.map], ['Players', `${v.players}/${v.max}`], ['Ping', `${v.ping}ms`]].map(([k, val]) => (
-          <div key={k} className="well rounded-2xl py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[10px] text-silver">{k}</Mono></div>
+          <div key={k} className="well py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[10px] text-silver">{k}</Mono></div>
         ))}
       </div>
 
@@ -419,7 +418,7 @@ function Rcon({ id, onClose }) {
         <Btn variant="ghost" icon={Activity} onClick={() => exec('status')}><Mono>status</Mono></Btn>
       </div>
 
-      <div dir="ltr" className="mono mt-4 h-64 overflow-y-auto well rounded-2xl p-3 text-left text-xs leading-6" aria-live="polite">
+      <div dir="ltr" className="mono mt-4 h-64 overflow-y-auto well p-3 text-left text-xs leading-6" aria-live="polite">
         {out.map((l, i) => (
           <div key={i} className={cx('whitespace-pre-wrap', l.t === 'in' && 'text-brand2', l.t === 'sys' && 'text-zinc-500', l.t === 'out' && 'text-zinc-200')}>{l.t === 'in' ? `] ${l.text}` : l.text}</div>
         ))}
@@ -439,7 +438,7 @@ function Rcon({ id, onClose }) {
       <h4 className="mt-6 mb-2 flex items-center gap-2 text-sm font-black"><Users className="size-4 text-brand2" /> بازیکن‌های آنلاین <Mono className="text-silver">({v.list.length})</Mono></h4>
       <ul className="space-y-1.5">
         {v.list.map((p) => (
-          <li key={p.name} className="flex items-center gap-3 well rounded-xl px-3 py-1.5">
+          <li key={p.name} className="flex items-center gap-3 well px-3 py-1.5">
             <Mono className="min-w-0 flex-1 truncate text-sm font-bold">{p.name}</Mono>
             <Mono className="text-xs text-silver">{p.k}/{p.d}</Mono>
             <Mono className={cx('w-12 text-end text-xs', p.ping < 30 ? 'text-ok' : 'text-warn')}>{p.ping}ms</Mono>
@@ -490,7 +489,7 @@ function ServerForm({ initial, onClose }) {
         <Field label="هاست / آی‌پی" error={e('host')}><input id="gs-host" dir="ltr" value={f.host} onChange={up('host')} placeholder="retake3.doping.games" className="field mono" /></Field>
         <Field label="پورت" error={e('port')}><input id="gs-port" dir="ltr" inputMode="numeric" value={f.port} onChange={up('port')} className="field mono" /></Field>
         <Field label="ظرفیت" error={e('max')}><input id="gs-max" dir="ltr" inputMode="numeric" value={f.max} onChange={up('max')} className="field mono" /></Field>
-        <div className="flex items-center justify-between well rounded-2xl px-4"><span className="text-sm font-bold">فقط VIP</span><Toggle checked={f.vip} onChange={(v) => setF({ ...f, vip: v })} label="فقط VIP" /></div>
+        <div className="flex items-center justify-between well px-4"><span className="text-sm font-bold">فقط VIP</span><Toggle checked={f.vip} onChange={(v) => setF({ ...f, vip: v })} label="فقط VIP" /></div>
       </div>
     </Modal>
   );
@@ -604,7 +603,7 @@ function Sales() {
         {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
         <ul className="mt-4 space-y-2">
           {s.discounts.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 well rounded-2xl px-3 py-2">
+            <li key={d.id} className="flex items-center gap-3 well px-3 py-2">
               <div className="min-w-0 flex-1">
                 <Mono className="block font-bold">{d.code}</Mono>
                 <Mono className="text-[11px] text-silver">{d.percent}% · {d.used}/{d.max} used</Mono>
@@ -621,7 +620,7 @@ function Sales() {
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><CreditCard className="size-4 text-brand2" /> درگاه‌های پرداخت</h3>
         <ul className="mt-4 space-y-2">
           {s.gateways.map((g) => (
-            <li key={g.id} className="flex items-center gap-3 well rounded-2xl px-3 py-3">
+            <li key={g.id} className="flex items-center gap-3 well px-3 py-3">
               <div className="min-w-0 flex-1">
                 <div className="font-bold">{g.name}</div>
                 <div className="text-[11px] text-silver">{g.kind} · <Mono>{g.key}</Mono></div>
@@ -638,7 +637,7 @@ function Sales() {
             </li>
           ))}
         </ul>
-        <div className="mt-4 well rounded-2xl p-4">
+        <div className="mt-4 well p-4">
           <div className="text-xs text-silver">فروش ثبت‌شده در این نشست (حساب نمونه)</div>
           <div className="mt-1 text-2xl font-black">{toman(paid.reduce((a, i) => a + i.amount, 0))}</div>
           <div className="text-[11px] text-zinc-500">{fa(paid.length)} تراکنش موفق · {fa(s.invoices.length - paid.length)} ناموفق</div>
@@ -669,7 +668,7 @@ function Logs() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
           {L_TYPES.map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setType(id)} aria-pressed={type === id} className={cx('shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold whitespace-nowrap', type === id ? 'bg-white/[0.1] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.14)]' : 'text-zinc-500 hover:text-white')}>{label}</button>
+            <button key={id} type="button" onClick={() => setType(id)} aria-pressed={type === id} className={cx('shrink-0 px-3.5 py-1.5 text-xs font-bold whitespace-nowrap', type === id ? 'bg-white text-black' : 'text-zinc-500 hover:text-white')}>{label}</button>
           ))}
         </div>
         <select id="log-level" value={level} onChange={(e) => setLevel(e.target.value)} className="field w-auto" aria-label="سطح">
@@ -725,12 +724,12 @@ export default function Admin() {
     <div className="gutter mx-auto max-w-7xl pt-14">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="eyebrow">Control center · SUPER_ADMIN · 10.0.0.2</div>
-          <h1 className="mt-4 text-4xl font-extralight sm:text-5xl">مرکز کنترل <span className="font-black">دوپینگ</span></h1>
+          <h1 className="sliced inline-block text-5xl font-black sm:text-7xl">مرکز کنترل</h1>
+          <p className="mt-3 text-sm text-zinc-400">نقش <Mono className="font-bold text-white">SUPER_ADMIN</Mono> · نشست از <Mono>10.0.0.2</Mono></p>
         </div>
         <Badge tone={alerts ? 'bad' : 'ok'} icon={ShieldAlert}>{alerts ? `${fa(alerts)} هشدار باز` : 'بدون هشدار'}</Badge>
       </div>
-      <div className="mt-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-10 grid grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
         <Stat icon={Activity} label="کاربر آنلاین (حساب‌های نمونه)" value={<Mono>{online}<span className="text-lg text-zinc-600">/{s.users.length}</span></Mono>} />
         <Stat icon={Waypoints} label="WireGuard Peers فعال" value={<Mono>{peers}</Mono>} sub="روی نودهای ورودی" />
         <Stat icon={Gauge} label="بیشترین بار CPU" value={<Mono>{Math.max(...s.routers.map((r) => r.cpu))}%</Mono>} tone={Math.max(...s.routers.map((r) => r.cpu)) > 80 ? 'text-brand2' : 'text-white'} />
