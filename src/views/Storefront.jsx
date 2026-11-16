@@ -1,134 +1,128 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, BadgePercent, Check, CircleCheck, Crown, Globe, Play, Search, ShieldCheck, ShoppingCart, Wallet, Zap } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, BadgePercent, Check, ChevronDown, Crown, Play, Search, ShieldCheck, Wallet } from 'lucide-react';
 import { useStore } from '../store.jsx';
-import { ModeEmblem, PingBars, Pips, RouteMap, SpeedBars } from '../art.jsx';
-import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, SectionTitle } from '../ui.jsx';
+import { GameCover, ModeEmblem } from '../art.jsx';
+import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, SectionTitle, Tabs } from '../ui.jsx';
 import { EXITS, fa, GAMES, GB, MODES, PLAN_NAME, priceOf, rint, tierLabel, TIERS, toman } from '../data.js';
+
+const jump = (id) => document.getElementById(id)?.scrollIntoView();
 
 /* ───────────────────────── Hero ───────────────────────── */
 
-function useCountTo(target, deps) {
-  const [v, setV] = useState(target);
-  const from = useRef(target);
-  useEffect(() => {
-    const start = performance.now();
-    const a = from.current;
-    let raf;
-    const step = (t) => {
-      const k = Math.min(1, (t - start) / 900);
-      const cur = Math.round(a + (target - a) * (1 - (1 - k) ** 3));
-      from.current = cur;
-      setV(cur);
-      if (k < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return v;
+/** The one live element on the page: ping to each game's servers, with and without Doping. */
+function LivePing() {
+  const { s, set } = useStore();
+  const [on, setOn] = useState(true);
+  const wob = useMemo(() => GAMES.map(() => rint(-2, 2)), [s.tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between text-xs text-zinc-500">
+        <span>پینگ تا سرور بازی</span>
+        <span className="flex items-center gap-1.5"><Dot /> زنده</span>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-ink p-1" role="tablist">
+        {[[false, 'بدون دوپینگ'], [true, 'با دوپینگ']].map(([v, label]) => (
+          <button key={label} type="button" role="tab" aria-selected={on === v} onClick={() => setOn(v)} className={cx('rounded-lg py-2 text-[13px] transition-colors', on === v ? (v ? 'bg-brand font-bold text-white' : 'bg-white/10 font-bold text-white') : 'text-zinc-400 hover:text-white')}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <ul className="mt-3">
+        {GAMES.map((g, i) => {
+          const [ping, loss] = on ? g.via[s.exit] : g.isp;
+          const p = ping + wob[i] * (on ? 1 : 4);
+          return (
+            <li key={g.id} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
+              <div className="w-24 shrink-0" dir="ltr">
+                <Mono className="block text-[13px] font-bold">{g.name}</Mono>
+                <Mono className="block truncate text-[11px] text-zinc-600">{g.dc}</Mono>
+              </div>
+              <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-line" dir="ltr">
+                <div className={cx('h-full rounded-full transition-[width] duration-700', on ? 'bg-ok' : 'bg-zinc-500')} style={{ width: `${Math.min(100, (p / 180) * 100)}%` }} />
+              </div>
+              <div className="w-20 shrink-0 text-end" dir="ltr">
+                <Mono className={cx('text-lg font-bold', on ? 'text-white' : 'text-zinc-400')}>{p}</Mono>
+                <Mono className="ms-1 text-[11px] text-zinc-600">ms</Mono>
+                <Mono className={cx('block text-[11px]', loss ? 'text-warn' : 'text-zinc-600')}>{loss}% loss</Mono>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+        <span>خروجی:</span>
+        {EXITS.map((e) => (
+          <button key={e.id} type="button" aria-pressed={e.id === s.exit} onClick={() => { set({ exit: e.id }); setOn(true); }} className={cx('rounded-md px-2 py-1 transition-colors', e.id === s.exit ? 'bg-white/10 text-white' : 'hover:text-white')}>
+            {e.name}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
 }
 
-const chip = (on) => cx('para shrink-0 px-3.5 py-1.5 text-xs font-bold whitespace-nowrap transition-colors duration-150', on ? 'bg-white text-black' : 'text-zinc-400 hover:text-white');
-
 function Hero() {
-  const { s, set } = useStore();
-  const [gameId, setGameId] = useState('cs2');
-  const [run, setRun] = useState(0);
-  const game = GAMES.find((g) => g.id === gameId);
-  const exit = EXITS.find((e) => e.id === s.exit);
-  const [tPing, tLoss, tJit] = game.via[s.exit];
-  const best = Object.entries(game.via).sort((a, b) => a[1][0] - b[1][0])[0][0];
-  // Small live wobble so the numbers behave like a running measurement.
-  const wobble = useMemo(() => ({ isp: rint(-6, 9), dp: rint(-1, 1) }), [s.tick, gameId, s.exit]); // eslint-disable-line react-hooks/exhaustive-deps
-  const isp = useCountTo(game.isp[0] + wobble.isp, [gameId, wobble.isp]);
-  const dp = useCountTo(tPing + wobble.dp, [gameId, s.exit, run, wobble.dp]);
-  const jump = (id) => document.getElementById(id)?.scrollIntoView();
-  const rows = [
-    { name: 'اینترنت معمولی', sub: 'مسیر اشتراکی بین‌الملل', ping: isp, loss: game.isp[1], jit: game.isp[2], hops: 14 },
-    { name: `دوپینگ از ${exit.name}`, sub: 'تانل WireGuard اختصاصی', ping: dp, loss: tLoss, jit: tJit, hops: 3, win: true },
-  ];
-
+  const { s } = useStore();
+  const online = s.servers.reduce((a, v) => a + v.players, 0);
   return (
-    <section className="relative overflow-hidden">
-      <SpeedBars className="absolute top-[clamp(5.2rem,14vw,11rem)] left-0 w-[62%] sm:w-[54%]" />
-
-      <div className="gutter relative mx-auto max-w-7xl pt-12 sm:pt-20">
-        <h1 className="text-[clamp(3.6rem,13vw,10.5rem)] leading-[1.02] font-black">
-          <span className="sliced inline-block">پینگت رو</span>
-          <br />
-          <span className="para inline-block bg-white px-[0.18em] text-black"><span className="inline-block">دوپینگ</span></span> کن!
-        </h1>
-        <div className="mt-8 grid grid-cols-1 items-end gap-8 lg:grid-cols-[minmax(0,30rem)_1fr]">
-          <div>
-            <p className="text-lg leading-9 text-zinc-300">
-              تانل اختصاصی گیمینگ از لبه ایران تا عمان، امارات و اروپا. پینگ پایین، بدون پکت لاس، بدون تحریم.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-4 ps-2">
-              <Btn size="lg" onClick={() => jump('pricing')}>خرید سرویس</Btn>
-              <Btn size="lg" variant="ghost" onClick={() => jump('servers')}>سرورهای CS2</Btn>
-            </div>
+    <section className="gutter mx-auto max-w-6xl pt-14 sm:pt-20">
+      <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_26rem] lg:gap-16">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-xs text-zinc-400"><Dot /> تانل اختصاصی گیمینگ · MikroTik + WireGuard</div>
+          <h1 className="mt-6 text-[2.6rem] leading-[1.25] font-black sm:text-6xl sm:leading-[1.2]">
+            پینگت رو
+            <br />
+            <span className="text-brand2">دوپینگ</span> کن.
+          </h1>
+          <p className="mt-6 max-w-md text-[15px] leading-8 text-zinc-400">
+            مسیر اختصاصی از ایران تا سرور بازی، از طریق عمان، امارات و اروپا. پینگ پایین، بدون پکت لاس، بدون تحریم.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Btn size="lg" onClick={() => jump('pricing')}>خرید سرویس <ArrowLeft className="size-4" /></Btn>
+            <Btn size="lg" variant="ghost" onClick={() => jump('servers')}>سرورهای CS2</Btn>
           </div>
         </div>
+        <LivePing />
+      </div>
 
-        {/* The glass sits on top of the trail so the bars show through it. */}
-        <Card className="mt-12 sm:mt-16">
-          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 pt-6 sm:px-8">
-            <div className="flex items-center gap-2.5 text-sm font-black"><Dot /> مسیر زنده تا <Mono>{game.dc}</Mono></div>
-            <div className="flex max-w-full gap-1 overflow-x-auto px-1" role="tablist" aria-label="انتخاب بازی">
-              {GAMES.map((g) => (
-                <button key={g.id} type="button" role="tab" aria-selected={g.id === gameId} onClick={() => setGameId(g.id)} className={chip(g.id === gameId)}><Mono className="block">{g.name}</Mono></button>
-              ))}
+      <dl className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
+        {[[<Mono key="a">28ms</Mono>, 'میانگین پینگ CS2'], [<Mono key="b">0%</Mono>, 'پکت لاس روی تانل'], [fa(s.routers.length), 'نود در ایران و خارج'], [fa(online), 'گیمر آنلاین روی سرورها']].map(([v, l]) => (
+          <div key={l} className="bg-ink px-6 py-5">
+            <dd className="text-2xl font-black sm:text-3xl">{v}</dd>
+            <dt className="mt-1 text-xs text-zinc-500">{l}</dt>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/* ───────────────────────── Covered games ───────────────────────── */
+
+const COVERED = [
+  ['Counter-Strike 2', 145, 28], ['VALORANT', 118, 26], ['EA SPORTS FC 26', 132, 29], ['Dota 2', 156, 27], ['Warzone', 168, 38],
+  ['Apex Legends', 141, 36], ['PUBG', 127, 33], ['Fortnite', 152, 58], ['Rust', 96, 16], ['Minecraft', 88, 15],
+];
+
+function Games() {
+  return (
+    <section className="gutter mx-auto max-w-6xl pt-24">
+      <SectionTitle label="بازی‌های تحت پوشش" title="هر بازی، مسیر خودش." desc="برای هر بازی نزدیک‌ترین خروجی به دیتاسنتر همون بازی انتخاب می‌شه." />
+      <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {COVERED.map(([name, isp, dp], i) => (
+          <GameCover key={name} name={name} index={i}>
+            <div className="mt-2 flex items-baseline gap-2 text-xs" dir="ltr">
+              <Mono className="text-zinc-600 line-through">{isp}</Mono>
+              <Mono className="font-bold text-ok">{dp}ms</Mono>
             </div>
-          </div>
-
-          <div className="overflow-x-auto"><RouteMap exit={s.exit} dcLabel={game.dc} className="mt-2 block w-full min-w-[640px]" /></div>
-
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 sm:px-8">
-            <span className="text-xs font-bold text-zinc-400">خروجی</span>
-            <div className="flex gap-1 px-1">
-              {EXITS.map((e) => (
-                <button key={e.id} type="button" aria-pressed={e.id === s.exit} onClick={() => { set({ exit: e.id }); setRun((r) => r + 1); }} className={chip(e.id === s.exit)}>
-                  <span className="block">{e.name}{e.id === best && ' ★'}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* timing sheet */}
-          <div className="mt-5 overflow-x-auto px-5 pb-8 sm:px-8">
-            <table className="w-full min-w-[520px] text-start">
-              <thead>
-                <tr className="text-xs text-zinc-500">
-                  {['مسیر', 'پینگ', 'پکت لاس', 'جیتر', 'هاپ'].map((h) => <th key={h} className="pb-2 text-start font-bold">{h}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.name} className={cx('border-t', r.win ? 'border-brand bg-brand text-white' : 'border-white/15 text-zinc-400')}>
-                    <td className="py-3 ps-4">
-                      <div className={cx('text-base font-black', r.win && 'text-white')}>{r.name}</div>
-                      <div className={cx('text-xs', r.win ? 'text-white/75' : 'text-zinc-500')}>{r.sub}</div>
-                    </td>
-                    <td className="py-3"><Mono className="text-4xl font-black italic sm:text-5xl">{r.ping}</Mono><Mono className="ms-1 text-xs">ms</Mono></td>
-                    <td className="py-3"><Mono className="text-xl font-black italic">{r.loss}%</Mono></td>
-                    <td className="py-3"><Mono className="text-xl font-black italic">±{r.jit}</Mono></td>
-                    <td className="py-3 pe-4"><Mono className="text-xl font-black italic">{r.hops}</Mono></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mt-4 text-sm text-zinc-300">
-              <Mono className="text-2xl font-black text-white italic">−{Math.max(0, isp - dp)}ms</Mono>
-              <span className="ms-3">اختلاف پینگ روی <Mono>{game.full}</Mono></span>
-            </p>
-          </div>
-        </Card>
+          </GameCover>
+        ))}
       </div>
     </section>
   );
 }
 
-/* ───────────────────────── Game servers: a timing board, not a card grid ───────────────────────── */
+/* ───────────────────────── Game servers ───────────────────────── */
 
 function ServerRow({ v }) {
   const { toast } = useStore();
@@ -137,46 +131,42 @@ function ServerRow({ v }) {
   const on = v.status === 'online';
   const steam = v.game !== 'Minecraft';
   return (
-    <li className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-t border-white/10 px-4 py-4 transition-colors duration-150 hover:bg-white/[0.06] sm:px-6 lg:grid-cols-[auto_minmax(0,1.5fr)_minmax(0,1fr)_11rem_5rem_auto]">
-      <ModeEmblem mode={v.mode} vip={v.vip} className="h-11 w-auto" />
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-t border-line px-4 py-4 sm:px-5 lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,0.9fr)_9rem_4rem_auto]">
+      <ModeEmblem mode={v.mode} vip={v.vip} />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <Mono className="truncate text-[15px] font-bold">{v.name}</Mono>
-          {v.vip && <Crown className="size-4 shrink-0 text-warn" aria-label="VIP" />}
+          <Mono className="truncate text-sm font-bold">{v.name}</Mono>
+          {v.vip && <Crown className="size-3.5 shrink-0 text-warn" aria-label="VIP" />}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-zinc-500">
           <Mono>{v.tick}</Mono>
-          <span className="inline-flex items-center gap-1 text-emerald-400"><ShieldCheck className="size-3.5" /><Mono>{v.ac}</Mono></span>
-          {!on && <span className="font-bold text-brand2">آفلاین</span>}
+          <span className="inline-flex items-center gap-1"><ShieldCheck className="size-3" /><Mono>{v.ac}</Mono></span>
+          {!on && <span className="text-brand2">آفلاین</span>}
         </div>
       </div>
-      <div className="flex items-center gap-2 lg:hidden" dir="ltr">
-        <PingBars ping={on ? v.ping : 999} /><Mono className="text-lg font-black italic">{on ? v.ping : '—'}</Mono>
-      </div>
+      <Mono className={cx('text-sm font-bold lg:hidden', v.ping <= 20 ? 'text-ok' : 'text-warn')}>{on ? `${v.ping}ms` : '—'}</Mono>
 
-      <Mono className="col-span-3 truncate text-2xl font-black italic lg:col-span-1">{v.map}</Mono>
+      <Mono className="col-span-3 truncate text-sm text-zinc-300 lg:col-span-1">{v.map}</Mono>
       <div className="col-span-3 lg:col-span-1">
-        <div className="mb-1.5 flex items-baseline justify-between" dir="ltr">
-          <Mono className="text-sm"><b className="text-lg font-black italic">{v.players}</b><span className="text-zinc-500">/{v.max} Players</span></Mono>
-          {full && <span className="text-xs font-bold text-brand2">پر</span>}
+        <div className="mb-1.5 flex justify-between text-xs" dir="ltr">
+          <Mono><b className="font-bold text-white">{v.players}</b><span className="text-zinc-600">/{v.max} Players</span></Mono>
+          {full && <span className="text-brand2">پر</span>}
         </div>
-        <Pips value={v.players} max={v.max} />
+        <Progress value={(v.players / v.max) * 100} tone={full ? 'bg-brand2' : 'bg-white'} />
       </div>
-      <div className="hidden items-center gap-2 lg:flex" dir="ltr">
-        <PingBars ping={on ? v.ping : 999} /><Mono className="text-2xl font-black italic">{on ? v.ping : '—'}</Mono><Mono className="text-xs text-zinc-500">ms</Mono>
-      </div>
-      <div className="col-span-3 flex flex-wrap items-center justify-end gap-3 ps-2 lg:col-span-1">
-        <CopyBtn text={steam ? `connect ${addr}` : addr} label="کپی IP" size="md" />
+      <Mono className={cx('hidden text-sm font-bold lg:block', v.ping <= 20 ? 'text-ok' : 'text-warn')}>{on ? `${v.ping}ms` : '—'}</Mono>
+      <div className="col-span-3 flex flex-wrap items-center justify-end gap-2 lg:col-span-1">
+        <CopyBtn text={steam ? `connect ${addr}` : addr} label="کپی IP" variant="ghost" size="md" />
         {steam ? (
           <a
             href={`steam://connect/${addr}`}
             onClick={() => toast(full ? 'سرور پره؛ با اسلات رزرو VIP وارد می‌شی.' : 'درخواست اتصال به Steam فرستاده شد.', full ? 'warn' : 'ok')}
-            className="para inline-flex h-10 items-center bg-brand px-5 text-[13px] font-black whitespace-nowrap transition-colors duration-150 hover:bg-white hover:text-black"
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-[13px] font-bold whitespace-nowrap text-black transition-colors hover:bg-zinc-200"
           >
-            <span className="inline-flex items-center gap-2"><Play className="size-3.5 fill-current" /> اتصال سریع <Mono className="font-normal opacity-80">(Steam Connect)</Mono></span>
+            <Play className="size-3.5 fill-current" /> اتصال سریع <Mono className="font-normal text-zinc-600">(Steam Connect)</Mono>
           </a>
         ) : (
-          <CopyBtn text={addr} label="کپی آدرس سرور" variant="primary" size="md" />
+          <CopyBtn text={addr} label="کپی آدرس سرور" variant="outline" size="md" />
         )}
       </div>
     </li>
@@ -193,51 +183,39 @@ function ServersHub() {
     .filter((v) => !onlyFree || v.players < v.max)
     .filter((v) => `${v.name} ${v.map}`.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => b.players / b.max - a.players / a.max);
-  const count = (id) => s.servers.filter((v) => id === 'all' || v.mode === id).length;
+  const modes = MODES.filter((m) => m.id === 'all' || s.servers.some((v) => v.mode === m.id));
 
   return (
-    <section id="servers" className="gutter mx-auto max-w-7xl scroll-mt-24 pt-28">
+    <section id="servers" className="gutter mx-auto max-w-6xl scroll-mt-24 pt-24">
       <SectionTitle
-        title="بپر تو سرور"
-        desc="سرورهای اختصاصی CS2 روی نود داخلی ایران با Sub-tick، آنتی‌چیت و پینگ زیر ۱۵. برای اتصال، Steam باید روی سیستمت باز باشه."
-        action={<Badge tone="ok">{fa(s.servers.filter((v) => v.status === 'online').length)} سرور آنلاین · {fa(s.servers.reduce((a, v) => a + v.players, 0))} بازیکن</Badge>}
+        label="سرورهای بازی دوپینگ"
+        title="سرور CS2، داخل ایران."
+        desc="Sub-tick، آنتی‌چیت و پینگ زیر ۱۵ روی نود داخلی. برای اتصال، Steam باید باز باشه."
+        action={<span className="flex items-center gap-2 text-xs text-zinc-400"><Dot /> {fa(s.servers.filter((v) => v.status === 'online').length)} سرور آنلاین</span>}
       />
-      <div className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-3">
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-1">
-          {MODES.map((m) => (
-            <button key={m.id} type="button" onClick={() => setMode(m.id)} aria-pressed={mode === m.id} className={chip(mode === m.id)}>
-              <span className="block">{m.label} <Mono className="opacity-50">{count(m.id)}</Mono></span>
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center gap-2 text-xs font-bold text-zinc-400">
-          <input id="srv-free" type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} className="size-4 accent-[#e60012]" />
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <Tabs tabs={modes} value={mode} onChange={setMode} />
+        <label className="ms-auto flex items-center gap-2 text-xs text-zinc-400">
+          <input id="srv-free" type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} className="size-4 accent-white" />
           فقط جای خالی
         </label>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-zinc-500" />
+        <div className="relative w-full sm:w-56">
+          <Search className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-zinc-600" />
           <input id="srv-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم سرور یا مپ…" className="field pr-9" />
         </div>
       </div>
-      <Card className="mt-6">
-        <div className="hidden grid-cols-[auto_minmax(0,1.5fr)_minmax(0,1fr)_11rem_5rem_auto] gap-x-4 px-6 pt-5 pb-3 text-xs font-bold text-zinc-500 lg:grid">
-          <span className="w-[3.25rem]" /><span>سرور</span><span>مپ</span><span>بازیکن‌ها</span><span>پینگ داخلی</span><span className="w-[21rem]" />
+      <Card className="mt-4 overflow-hidden">
+        <div className="hidden grid-cols-[auto_minmax(0,1.4fr)_minmax(0,0.9fr)_9rem_4rem_auto] gap-x-4 px-5 py-3 text-xs text-zinc-500 lg:grid">
+          <span className="w-10" /><span>سرور</span><span>مپ</span><span>بازیکن‌ها</span><span>پینگ</span><span className="w-[19.5rem]" />
         </div>
-        {list.length ? <ul>{list.map((v) => <ServerRow key={v.id} v={v} />)}</ul> : <p className="p-12 text-center text-sm text-zinc-400">سروری با این فیلتر پیدا نشد. فیلتر رو عوض کن.</p>}
-        <div className="h-5" />
+        {list.length ? <ul className="max-lg:[&>li:first-child]:border-t-0">{list.map((v) => <ServerRow key={v.id} v={v} />)}</ul> : <p className="p-10 text-center text-sm text-zinc-500">سروری با این فیلتر پیدا نشد.</p>}
       </Card>
     </section>
   );
 }
 
-/* ───────────────────────── Pricing & checkout ───────────────────────── */
+/* ───────────────────────── Plans & checkout ───────────────────────── */
 
-const KINDS = [
-  { id: 'ping', label: 'سرویس کاهش پینگ', icon: Zap, feats: ['تانل WireGuard اختصاصی', 'انتخاب خروجی عمان / امارات / اروپا', 'کانفیگ برای ویندوز، موبایل و روتر', 'نمایش لحظه‌ای حجم مصرفی'] },
-  { id: 'dns', label: 'دی‌ان‌اس ضد تحریم', icon: Globe, feats: ['رفع تحریم Steam، Riot، EA، Battle.net', 'ثبت آی‌پی با یک کلیک', 'بدون افت سرعت دانلود', 'مناسب کنسول و PC'] },
-  { id: 'pro', label: 'پکیج پرو', icon: Crown, feats: ['همه امکانات کاهش پینگ', 'DNS ضد تحریم با ۲ آی‌پی', 'اسلات رزرو و تگ VIP روی سرورهای CS2', 'اولویت در پشتیبانی'] },
-];
-const SLOTS = [1, 2, 3, 5];
 const STEPS = ['انتقال به درگاه و پرداخت', 'تایید تراکنش (verify)', 'ساخت Peer و Simple Queue در میکروتیک'];
 
 function Checkout({ order, onClose, go }) {
@@ -290,7 +268,6 @@ function Checkout({ order, onClose, go }) {
       open
       onClose={step >= 0 && !done ? () => {} : onClose}
       title={done ? 'سرویس فعال شد' : 'تسویه سفارش'}
-      icon={done ? CircleCheck : ShoppingCart}
       footer={
         done ? (
           <>
@@ -331,7 +308,7 @@ function Checkout({ order, onClose, go }) {
                 type="button"
                 onClick={() => setGw(g.id)}
                 aria-pressed={gw === g.id}
-                className={cx('relative flex items-center gap-3 rounded-2xl p-3.5 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')} style={{ '--cut': '10px' }}
+                className={cx('relative flex items-center gap-3 rounded-2xl p-3.5 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}
               >
                 {g.id === 'wallet' ? <Wallet className="size-5 text-brand2" /> : <ShieldCheck className="size-5 text-silver" />}
                 <span className="min-w-0">
@@ -359,113 +336,93 @@ function Checkout({ order, onClose, go }) {
   );
 }
 
+
+const KINDS = [
+  { id: 'ping', label: 'کاهش پینگ' },
+  { id: 'dns', label: 'DNS ضد تحریم' },
+  { id: 'pro', label: 'پکیج پرو' },
+];
+const FEATS = {
+  ping: ['تانل WireGuard اختصاصی', 'خروجی عمان، امارات، اروپا', 'ویندوز، موبایل و روتر'],
+  dns: ['رفع تحریم Steam، Riot، EA', 'ثبت آی‌پی با یک کلیک', 'مناسب کنسول و PC'],
+  pro: ['همه امکانات کاهش پینگ', 'DNS ضد تحریم با ۲ آی‌پی', 'اسلات رزرو و تگ VIP در CS2'],
+};
+const SLOTS = [1, 2, 3, 5];
+
 function Pricing({ go }) {
   const { s } = useStore();
   const [kind, setKind] = useState('ping');
-  const [ti, setTi] = useState(1);
-  const [si, setSi] = useState(0);
   const [months, setMonths] = useState(1);
   const [order, setOrder] = useState(null);
-  const K = KINDS.find((k) => k.id === kind);
-  const tier = TIERS[ti];
-  const slots = SLOTS[si];
-  const p = priceOf(s.pricing, { kind, tier, slots, months });
   const isDns = kind === 'dns';
-  const idx = isDns ? si : ti;
-  const steps = isDns ? SLOTS : TIERS;
-  const title = isDns
-    ? `DNS ضد تحریم · ${fa(slots)} آی‌پی · ${fa(months)} ماهه`
-    : `${PLAN_NAME[kind]} · ${tierLabel(tier)} · ${fa(months)} ماهه`;
+  const options = isDns ? SLOTS : TIERS;
+  const popular = isDns ? 2 : 30;
+  const periods = [1, 3, 6].map((m) => ({ id: m, label: `${fa(m)} ماهه`, note: s.pricing.dur[m] ? `${fa(s.pricing.dur[m])}٪ تخفیف` : null }));
 
   return (
-    <section id="pricing" className="gutter mx-auto max-w-7xl scroll-mt-28 pt-28">
-      <SectionTitle title="پلنت رو بساز" desc="حجم و مدت رو انتخاب کن؛ قیمت همون لحظه حساب می‌شه. فعال‌سازی آنی، بدون قرارداد." />
-      <div className="mt-10 grid gap-3 sm:grid-cols-3">
-        {KINDS.map((k) => (
-          <button
-            key={k.id}
-            type="button"
-            onClick={() => setKind(k.id)}
-            aria-pressed={kind === k.id}
-            className={cx('relative flex items-center gap-3 rounded-2xl p-4 text-start transition duration-300', kind === k.id ? 'glass-red' : 'well text-zinc-400 hover:text-white')} style={{ '--cut': '12px' }}
-          >
-            <span className={cx('grid size-10 shrink-0 place-items-center', kind === k.id ? 'bg-white text-black' : 'bg-white/10')}><k.icon className="size-5" /></span>
-            <span className="min-w-0">
-              <span className="block truncate font-black">{k.label}</span>
-              <span className="block truncate text-xs text-silver">{k.id === 'ping' ? 'حجمی / زمانی' : k.id === 'dns' ? 'بر اساس تعداد آی‌پی' : 'کاهش پینگ + DNS + VIP سرورهای CS2'}</span>
-            </span>
-          </button>
-        ))}
+    <section id="pricing" className="gutter mx-auto max-w-6xl scroll-mt-24 pt-24">
+      <SectionTitle label="فروشگاه سرویس‌ها" title="پلنت رو انتخاب کن." desc="فعال‌سازی آنی. هر وقت حجم کم آوردی، از پنل ترافیک مازاد بخر." />
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <Tabs tabs={KINDS} value={kind} onChange={setKind} />
+        <Tabs tabs={periods} value={months} onChange={setMonths} />
       </div>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1.5fr_1fr]">
-        <Card className="p-6 sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-black">{isDns ? 'تعداد آی‌پی مجاز' : 'حجم ترافیک ماهانه'}</div>
-            {!isDns && (tier === 'inf' ? <Badge tone="brand">زمانی · بدون سقف حجم</Badge> : <Badge>حجمی</Badge>)}
-          </div>
-          <div className="mt-3 text-6xl leading-none font-black">
-            {isDns ? <>{fa(slots)} <span className="text-lg text-silver">آی‌پی</span></> : tier === 'inf' ? 'نامحدود' : <><Mono>{tier}</Mono> <Mono className="text-lg text-silver">GB</Mono></>}
-          </div>
-          <div className="relative mt-6">
-            <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 bg-white/15" dir="ltr">
-              <div className="h-2 bg-brand" style={{ width: `${(idx / (steps.length - 1)) * 100}%` }} />
-            </div>
-            <input
-              id="plan-slider"
-              type="range"
-              className="slider relative block"
-              min={0}
-              max={steps.length - 1}
-              step={1}
-              value={idx}
-              onChange={(e) => (isDns ? setSi(+e.target.value) : setTi(+e.target.value))}
-              aria-label={isDns ? 'تعداد آی‌پی' : 'حجم ترافیک'}
-              aria-valuetext={isDns ? `${slots} آی‌پی` : tierLabel(tier)}
-            />
-          </div>
-          <div className="mt-2 flex justify-between text-[11px] text-silver" dir="ltr">
-            {steps.map((t, i) => (
-              <button key={t} type="button" onClick={() => (isDns ? setSi(i) : setTi(i))} className={cx('mono rounded px-1', i === idx && 'font-bold text-white')}>
-                {t === 'inf' ? '∞' : isDns ? `${t} IP` : `${t} GB`}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-7 text-sm font-black">مدت اشتراک</div>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {[1, 3, 6].map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMonths(m)}
-                aria-pressed={months === m}
-                className={cx('relative rounded-2xl px-2 py-3.5 text-center transition', months === m ? 'glass-red' : 'well hover:bg-white/[0.04]')} style={{ '--cut': '10px' }} style={{ '--cut': '10px' }}
-              >
-                <div className="font-black">{fa(m)} ماهه</div>
-                <div className={cx('text-[11px]', s.pricing.dur[m] ? 'text-ok' : 'text-zinc-500')}>{s.pricing.dur[m] ? `${fa(s.pricing.dur[m])}٪ تخفیف` : 'قیمت پایه'}</div>
-              </button>
-            ))}
-          </div>
-        </Card>
-
-        <Card red className="flex flex-col p-6 sm:p-8">
-          <div className="flex items-center gap-2 text-sm font-black"><K.icon className="size-4 text-brand2" /> {K.label}</div>
-          <ul className="mt-4 space-y-2 text-sm text-zinc-300">
-            {K.feats.map((f) => <li key={f} className="flex items-start gap-2"><Check className="mt-1 size-4 shrink-0 text-ok" />{f}</li>)}
-          </ul>
-          <div className="mt-auto pt-6">
-            {p.off > 0 && <div className="text-sm text-zinc-500 line-through">{toman(p.gross)}</div>}
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-6xl leading-none font-black">{fa(p.total)}</span>
-              <span className="text-silver">تومان</span>
-            </div>
-            <div className="mt-1 text-xs text-silver">معادل ماهی {toman(Math.round(p.total / months / 1000) * 1000)}</div>
-            <Btn size="lg" icon={ShoppingCart} className="mt-6 w-full" onClick={() => setOrder({ kind, tier, slots, months, title, ...p })}>خرید و فعال‌سازی آنی</Btn>
-          </div>
-        </Card>
+      <div className={cx('mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2', isDns ? 'lg:grid-cols-4' : 'lg:grid-cols-5')}>
+        {options.map((opt) => {
+          const p = priceOf(s.pricing, { kind, tier: isDns ? 15 : opt, slots: isDns ? opt : 1, months });
+          const hot = opt === popular;
+          const name = isDns ? `${fa(opt)} آی‌پی` : tierLabel(opt);
+          const title = isDns ? `DNS ضد تحریم · ${fa(opt)} آی‌پی · ${fa(months)} ماهه` : `${PLAN_NAME[kind]} · ${tierLabel(opt)} · ${fa(months)} ماهه`;
+          return (
+            <Card key={opt} className={cx('flex flex-col p-5', hot && 'border-zinc-500')}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-zinc-400">{isDns ? 'تعداد آی‌پی' : opt === 'inf' ? 'زمانی' : 'حجمی'}</span>
+                {hot && <Badge tone="brand">پرفروش</Badge>}
+              </div>
+              <div className="mt-1 text-xl font-black">{name}</div>
+              <div className="mt-5 flex items-baseline gap-1.5">
+                <span className="text-3xl font-black">{fa(p.total / 1000)}</span>
+                <span className="text-xs text-zinc-500">هزار تومان</span>
+              </div>
+              <div className="text-xs text-zinc-600">{months > 1 ? `ماهی ${toman(Math.round(p.total / months / 1000) * 1000)}` : 'ماهانه'}</div>
+              <Btn variant={hot ? 'primary' : 'ghost'} className="mt-5 w-full" onClick={() => setOrder({ kind, tier: opt, slots: opt, months, title, ...p })}>فعال‌سازی</Btn>
+              <ul className="mt-5 space-y-2 border-t border-line pt-4 text-xs text-zinc-400">
+                {FEATS[kind].map((f) => <li key={f} className="flex items-start gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-zinc-500" />{f}</li>)}
+              </ul>
+            </Card>
+          );
+        })}
       </div>
       {order && <Checkout order={order} onClose={() => setOrder(null)} go={go} />}
+    </section>
+  );
+}
+
+/* ───────────────────────── FAQ & closing ───────────────────────── */
+
+const FAQ = [
+  ['دوپینگ با فیلترشکن چه فرقی داره؟', 'دوپینگ فقط ترافیک بازی رو از یک مسیر اختصاصی و کوتاه‌تر رد می‌کنه تا پینگ و پکت لاس کم بشه. برای وب‌گردی ساخته نشده و سایت‌های داخلی هم بدون تغییر کار می‌کنن.'],
+  ['حجمم تموم بشه چی می‌شه؟', 'اتصال تانل تا خرید حجم متوقف می‌شه. از پنل می‌تونی ترافیک مازاد بخری یا یک‌کلیکی تمدید کنی؛ همون لحظه دوباره وصل می‌شی.'],
+  ['روی کنسول هم کار می‌کنه؟', 'DNS ضد تحریم روی PS5 و Xbox مستقیم تنظیم می‌شه. برای کاهش پینگ روی کنسول، کانفیگ WireGuard رو روی روترت بذار.'],
+  ['آی‌پی اینترنتم عوض بشه DNS قطع می‌شه؟', 'آره، چون DNS فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. توی پنل دکمه «ثبت آی‌پی فعلی من» رو بزن تا دوباره کار کنه.'],
+  ['روی چند دستگاه می‌تونم وصل بشم؟', 'هر اشتراک یک کانفیگ داره. اگه روی دستگاه دیگه‌ای جا مونده، کلید رو از پنل ریست کن.'],
+];
+
+function Faq() {
+  const [open, setOpen] = useState(0);
+  return (
+    <section className="gutter mx-auto grid max-w-6xl grid-cols-1 gap-8 pt-24 lg:grid-cols-[20rem_1fr] lg:gap-16">
+      <SectionTitle label="پرسش‌های پرتکرار" title="سؤالی داری؟" desc="جواب سؤال‌هایی که بیشتر از همه قبل از خرید پرسیده می‌شه." />
+      <div className="flex flex-col gap-2">
+        {FAQ.map(([q, a], i) => (
+          <Card key={q}>
+            <button type="button" onClick={() => setOpen(open === i ? -1 : i)} aria-expanded={open === i} className="flex w-full items-center gap-3 px-5 py-4 text-start text-sm font-bold">
+              <span className="flex-1">{q}</span>
+              <ChevronDown className={cx('size-4 shrink-0 text-zinc-500 transition-transform', open === i && 'rotate-180')} />
+            </button>
+            {open === i && <p className="px-5 pb-5 text-sm leading-7 text-zinc-400">{a}</p>}
+          </Card>
+        ))}
+      </div>
     </section>
   );
 }
@@ -474,8 +431,20 @@ export default function Storefront({ go }) {
   return (
     <>
       <Hero />
+      <Games />
       <ServersHub />
       <Pricing go={go} />
+      <Faq />
+      <section className="gutter mx-auto max-w-6xl pt-24">
+        <div className="rounded-2xl border border-line bg-card px-6 py-14 text-center">
+          <h2 className="text-2xl font-black sm:text-4xl">آماده‌ای؟ بزن بریم.</h2>
+          <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">پلن رو بگیر، کانفیگ رو وارد کن و برو توی لابی.</p>
+          <div className="mt-7 flex flex-wrap justify-center gap-3">
+            <Btn size="lg" onClick={() => jump('pricing')}>خرید سرویس</Btn>
+            <Btn size="lg" variant="ghost" onClick={() => go('panel')}>ورود به پنل</Btn>
+          </div>
+        </div>
+      </section>
     </>
   );
 }

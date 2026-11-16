@@ -17,8 +17,8 @@ npm run typecheck:backend   # tsc --strict over backend/
 | Path | What it is |
 | --- | --- |
 | `src/Logo.jsx` | `<DopingLogo />` inline SVG (full lockup or `variant="mark"`) |
-| `src/art.jsx` | Vector art in the logo's vocabulary: `SpeedBars`, `RouteMap` (transit-style route + cluster topology), `ModeEmblem`, `RevBar` quota gauge, `Pips`, `PingBars`, `ArcMeter` |
-| `src/index.css`, `src/ui.jsx` | Design system: cut-glass slabs (`glass`, `glass-red`), leaning plate controls (`.para`), sliced headlines (`sliced`) |
+| `src/art.jsx` | Vector pieces: original `GameCover` artwork, `Ring` quota gauge, `RouteMap` cluster diagram, `ModeEmblem`, `ArcMeter` |
+| `src/index.css`, `src/ui.jsx` | Design system: near-black, flat bordered cards, one accent (crimson) for the primary action only |
 | `src/views/Storefront.jsx` | Hero + ping simulator, live game-server hub, plan builder + checkout |
 | `src/views/UserPanel.jsx` | Quota telemetry, WireGuard config/QR/key reset, DNS whitelist, Steam VIP, wallet, tickets |
 | `src/views/Admin.jsx` | Router cluster + sync, users/quota table, game servers + RCON console, pricing/discounts/gateways, audit log |

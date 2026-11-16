@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, Clock, Database, FileCode2, Fingerprint, Gauge, Globe, KeyRound, Lock, Repeat, Router, ScanLine, Server, ShieldCheck, UserCog } from 'lucide-react';
-import { RouteMap } from '../art.jsx';
 import { Badge, Card, CopyBtn, cx, Mono, SectionTitle } from '../ui.jsx';
 
 // The tab renders the real backend sources from /backend, so what you read here is what ships.
@@ -104,15 +103,15 @@ export default function Blueprint() {
   const open = (p) => { setPath(p); document.getElementById('code')?.scrollIntoView({ block: 'start' }); };
 
   return (
-    <div className="gutter mx-auto max-w-7xl pt-14">
+    <div className="gutter mx-auto max-w-6xl pt-10">
       <SectionTitle
-                title="نقشه فنی دوپینگ"
+                label="معماری بک‌اند و امنیت"
+        title="نقشه فنی دوپینگ"
         desc="کد این بخش همون فایل‌های پوشه backend در مخزن پروژه‌ست: TypeScript برای Next.js App Router، PostgreSQL و Redis."
         action={<Badge tone="ok" icon={ShieldCheck}><Mono>tsc --strict</Mono> بدون خطا</Badge>}
       />
 
       <Card className="mt-10 overflow-hidden p-6">
-        <RouteMap exit="mct" className="mb-4 block w-full" />
         <div className="text-xs font-black text-silver">مسیر داده (Data Plane)</div>
         <div className="mt-3 flex flex-wrap items-stretch gap-2">
           {FLOW.map((n, i) => (
@@ -126,10 +125,10 @@ export default function Blueprint() {
         <div className="mt-3 flex flex-wrap gap-2">{CONTROL.map((n) => <Node key={n.title} n={n} />)}</div>
       </Card>
 
-      <h3 className="mt-20 text-4xl font-black">دفاع در عمق</h3>
+      <h3 className="mt-14 text-xl font-black">دفاع در عمق</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {DEFENSE.map((d) => (
-          <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group relative p-6 text-start" style={{ '--cut': '14px' }}>
+          <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group relative p-5 text-start transition-colors hover:border-edge">
             <div className="flex items-center gap-2.5 text-[15px] font-black"><d.icon className="size-4 text-brand2" />{d.title}</div>
             <p className="mt-2 text-xs leading-6 text-silver">{d.text}</p>
             <Mono className="mt-2 block truncate text-[11px] text-zinc-500 group-hover:text-brand2">{d.file}</Mono>
@@ -149,7 +148,7 @@ export default function Blueprint() {
                   dir="ltr"
                   onClick={() => setPath(f.path)}
                   aria-current={path === f.path ? 'true' : undefined}
-                  className={cx('mono flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition', path === f.path ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/[0.03] hover:text-white')}
+                  className={cx('mono flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition', path === f.path ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/[0.03] hover:text-white')}
                 >
                   <FileCode2 className="size-3.5 shrink-0" />
                   <span className="truncate">{f.path.split('/').slice(-2).join('/')}</span>

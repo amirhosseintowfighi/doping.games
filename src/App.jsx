@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import DopingLogo from './Logo.jsx';
-import { SpeedBars } from './art.jsx';
 import { StoreProvider, useStore } from './store.jsx';
 import { cx, Mono } from './ui.jsx';
 import { fa } from './data.js';
@@ -35,38 +34,25 @@ function Shell() {
   const Current = VIEWS.find((v) => v.id === view).C;
 
   return (
-    <div className="relative isolate min-h-screen">
-      {/* The trail from the logo, fixed behind every screen so the glass always has colour to refract. */}
-      {view !== 'store' && (
-        <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
-          <SpeedBars dim className="absolute top-[52%] left-0 w-[46%]" />
-        </div>
-      )}
-
-      <header className="sticky z-40 border-b border-white/10 bg-ink/75 backdrop-blur-2xl" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
-        <div className="gutter mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
+    <div className="min-h-screen">
+      <header className="sticky z-40 border-b border-line bg-ink/85 backdrop-blur-xl" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
+        <div className="gutter mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-1 py-3">
           <button type="button" onClick={() => go('store')} aria-label="دوپینگ · صفحه اصلی" className="shrink-0">
-            <DopingLogo className="h-7 sm:h-8" />
+            <DopingLogo className="h-6 sm:h-7" />
           </button>
-          <nav className="order-3 flex w-full gap-1 overflow-x-auto px-1 lg:order-none lg:w-auto" aria-label="محیط‌های پلتفرم">
-            {VIEWS.map((v) => {
-              const on = view === v.id;
-              return (
-                <button
-                  key={v.id} type="button" onClick={() => go(v.id)} aria-current={on ? 'page' : undefined}
-                  className={cx('para flex-1 shrink-0 px-4 py-2 text-[13px] font-black whitespace-nowrap transition-colors duration-150 lg:flex-none', on ? 'bg-white text-black' : 'text-zinc-400 hover:text-white')}
-                >
-                  <span className="block"><span className="hidden sm:inline">{v.label}</span><span className="sm:hidden">{v.short}</span></span>
-                </button>
-              );
-            })}
+          <nav className="order-3 flex w-full gap-5 overflow-x-auto lg:order-none lg:w-auto" aria-label="محیط‌های پلتفرم">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id} type="button" onClick={() => go(v.id)} aria-current={view === v.id ? 'page' : undefined}
+                className={cx('shrink-0 border-b-2 py-1.5 text-[13px] whitespace-nowrap transition-colors', view === v.id ? 'border-white font-bold text-white' : 'border-transparent text-zinc-400 hover:text-white')}
+              >
+                <span className="hidden sm:inline">{v.label}</span><span className="sm:hidden">{v.short}</span>
+              </button>
+            ))}
           </nav>
-          <button type="button" onClick={() => go('panel')} className="ms-auto flex items-center gap-3 text-xs transition hover:text-brand2">
-            <span className="text-end leading-tight">
-              <Mono className="block font-bold">Arash_AWP</Mono>
-              <span className="text-zinc-400">{fa(s.wallet)} تومان</span>
-            </span>
-            <span className="para grid h-9 w-9 place-items-center bg-brand font-black text-white"><span>A</span></span>
+          <button type="button" onClick={() => go('panel')} className="ms-auto flex h-9 items-center gap-2.5 rounded-xl bg-white px-3.5 text-xs font-bold text-black transition-colors hover:bg-zinc-200">
+            <Mono>Arash_AWP</Mono>
+            <span className="font-normal text-zinc-600">{fa(s.wallet)} تومان</span>
           </button>
         </div>
       </header>
@@ -75,9 +61,9 @@ function Shell() {
         <Current go={go} />
       </main>
 
-      <footer className="gutter mx-auto mt-28 max-w-7xl border-t border-white/10 py-8">
+      <footer className="gutter mx-auto mt-24 max-w-6xl border-t border-line py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-zinc-500">
-          <DopingLogo className="h-6" />
+          <DopingLogo className="h-5" />
           <p>دوپینگ، شبکه گیمینگ ایران · <Mono>doping.games</Mono></p>
           <p>نسخه نمایشی: داده‌ها در مرورگر شبیه‌سازی می‌شوند و به روتر واقعی وصل نیستند.</p>
         </div>
@@ -85,8 +71,8 @@ function Shell() {
 
       <div className="gutter pointer-events-none fixed inset-x-0 bottom-5 z-[70] flex flex-col items-center gap-2" aria-live="polite">
         {s.toasts.map((t) => (
-          <div key={t.id} className={cx('animate-rise pointer-events-auto flex max-w-md items-center gap-2.5 px-5 py-3 text-[13px] font-bold', t.tone === 'ok' ? 'bg-white text-black' : t.tone === 'bad' ? 'bg-brand text-white' : 'bg-warn text-black')}>
-            {t.tone === 'ok' ? <CircleCheck className="size-4 shrink-0" /> : <CircleAlert className="size-4 shrink-0" />}
+          <div key={t.id} className="animate-rise pointer-events-auto flex max-w-md items-center gap-2.5 rounded-xl border border-edge bg-raise px-4 py-2.5 text-[13px] shadow-2xl shadow-black">
+            {t.tone === 'ok' ? <CircleCheck className="size-4 shrink-0 text-ok" /> : <CircleAlert className={cx('size-4 shrink-0', t.tone === 'bad' ? 'text-brand2' : 'text-warn')} />}
             <span>{t.msg}</span>
           </div>
         ))}
