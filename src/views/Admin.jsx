@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Activity, BadgePercent, Ban, Banknote, Code2, Cpu, CreditCard, Crosshair, Gauge, MemoryStick, Pause, Pencil, Play, Plus, Power,
+  Activity, BadgePercent, Ban, Banknote, Code2, CreditCard, Crosshair, Gauge, Pause, Pencil, Play, Plus, Power,
   RefreshCw, RotateCcw, Router, ScrollText, Search, Send, Server, ShieldAlert, Terminal, Trash2, UserX, Users, Waypoints,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
-import { Badge, Btn, Card, cx, Dot, Drawer, Field, Modal, Mono, Progress, Stat, Tabs, Toggle } from '../ui.jsx';
+import { ArcMeter, ModeEmblem, RouteMap } from '../art.jsx';
+import { Badge, Btn, Card, cx, Dot, Drawer, Field, Modal, Mono, Progress, RailLayout, Stat, Toggle } from '../ui.jsx';
 import { clock, CS2_MAPS, daysLeft, fa, GB, gb, isIPv4, MODES, PLAN_NAME, rint, roster, tierLabel, TIERS, toman, uid } from '../data.js';
 
 const U_STATUS = { active: ['Active', 'ok'], quota: ['Quota Exceeded', 'bad'], expired: ['Expired', 'warn'], disabled: ['Disabled', 'mute'] };
@@ -117,7 +118,7 @@ function SyncModal({ router, onClose }) {
       open onClose={onClose} wide icon={RefreshCw} title={`تست اتصال و سینک · ${router.name}`}
       footer={<><Btn variant="ghost" icon={RotateCcw} disabled={!done} onClick={() => setRun((n) => n + 1)}>اجرای دوباره</Btn><Btn onClick={onClose}>بستن</Btn></>}
     >
-      <div dir="ltr" className="mono min-h-64 rounded-xl border border-white/8 bg-ink p-4 text-left text-xs leading-6" aria-live="polite">
+      <div dir="ltr" className="mono min-h-64 well rounded-2xl p-4 text-left text-xs leading-6" aria-live="polite">
         {lines.map((l, i) => (
           <div key={i} className={cx(l.tone === 'ok' && 'text-ok', l.tone === 'bad' && 'text-brand2', l.tone === 'dim' && 'text-silver', l.tone === 'out' && 'text-white')}>
             <span className="text-zinc-600">{l.at} </span>{l.text}
@@ -129,18 +130,6 @@ function SyncModal({ router, onClose }) {
   );
 }
 
-function Meter({ icon: Icon, label, value }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-[11px] text-silver">
-        <span className="flex items-center gap-1"><Icon className="size-3" />{label}</span>
-        <Mono className={cx('font-bold', value >= 85 ? 'text-brand2' : value >= 65 ? 'text-warn' : 'text-white')}>{value}%</Mono>
-      </div>
-      <Progress value={value} tone={value >= 85 ? 'bg-brand2' : value >= 65 ? 'bg-warn' : 'bg-ok'} h="h-1.5" />
-    </div>
-  );
-}
-
 function Routers() {
   const { s, set, toast, log } = useStore();
   const [form, setForm] = useState(null);
@@ -148,15 +137,16 @@ function Routers() {
   const [del, setDel] = useState(null);
   const group = (role, title) => (
     <div>
-      <div className="mb-3 flex items-center gap-2 text-sm font-black"><Waypoints className="size-4 text-brand2" />{title}</div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mb-4 flex items-center gap-3"><span className="text-sm font-black">{title}</span><span className="hairline flex-1" /></div>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
         {s.routers.filter((r) => r.role === role).map((r) => {
           const on = r.status === 'online';
           return (
-            <Card key={r.id} className={cx('flex flex-col gap-4 p-4', !on && 'border-red-500/30')}>
+            <Card key={r.id} red={!on} className="flex flex-col gap-5 p-6">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <Mono className="block truncate text-base font-black">{r.name}</Mono>
+                  <span className="eyebrow">{r.role === 'entry' ? 'Entry · Iran' : 'Exit · Abroad'}</span>
+                  <Mono className="mt-1 block truncate text-xl font-light">{r.name}</Mono>
                   <div className="truncate text-xs text-silver">{r.city}</div>
                 </div>
                 <Badge tone={on ? 'ok' : 'bad'}>{on ? <><Dot /> Online</> : 'Offline'}</Badge>
@@ -169,13 +159,13 @@ function Routers() {
                   </div>
                 ))}
               </dl>
-              <div className="grid grid-cols-2 gap-3">
-                <Meter icon={Cpu} label="CPU" value={on ? r.cpu : 0} />
-                <Meter icon={MemoryStick} label="RAM" value={on ? r.ram : 0} />
+              <div className="grid grid-cols-2 gap-6 px-4">
+                <ArcMeter label="CPU" value={on ? r.cpu : 0} />
+                <ArcMeter label="RAM" value={on ? r.ram : 0} />
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
                 {[['WG Peers', r.peers], ['Queues', r.queues], ['Handshake', on ? `${r.handshake}s` : '—']].map(([k, v]) => (
-                  <div key={k} className="rounded-lg bg-white/[0.04] py-2">
+                  <div key={k} className="well rounded-xl py-2">
                     <Mono className={cx('block text-sm font-black', k === 'Handshake' && on && (r.handshake < 120 ? 'text-ok' : 'text-warn'))}>{v}</Mono>
                     <Mono className="text-[10px] text-silver">{k}</Mono>
                   </div>
@@ -203,6 +193,16 @@ function Routers() {
         <p className="text-sm text-silver">کلاستر RouterOS v7 · اتصال پنل فقط از طریق REST روی TLS با گواهی پین‌شده.</p>
         <Btn icon={Plus} onClick={() => setForm({})}>افزودن روتر</Btn>
       </div>
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between px-6 pt-5">
+          <span className="eyebrow">Cluster topology · live</span>
+          <Badge tone={s.routers.every((r) => r.status === 'online') ? 'ok' : 'bad'}><Dot tone={s.routers.every((r) => r.status === 'online') ? 'ok' : 'bad'} /> {fa(s.routers.filter((r) => r.status === 'online').length)} از {fa(s.routers.length)} نود در مدار</Badge>
+        </div>
+        <RouteMap
+          mode="topology" className="block w-full"
+          status={Object.fromEntries(s.routers.filter((r) => /^(THR|SHZ|MCT|DXB|FRA)/.test(r.name)).map((r) => [r.name.slice(0, 3).toLowerCase(), { tone: r.status !== 'online' ? 'bad' : r.cpu >= 85 ? 'warn' : 'ok', sub: r.status === 'online' ? `${r.peers} peers · ${r.cpu}%` : 'OFFLINE' }]))}
+        />
+      </Card>
       {group('entry', 'روترهای ورودی ایران (Entry)')}
       {group('exit', 'روترهای خروجی عمان / امارات / اروپا (Exit)')}
       {form && <RouterForm initial={form} onClose={() => setForm(null)} />}
@@ -226,7 +226,7 @@ function Raw({ u, onClose }) {
   };
   return (
     <Modal open onClose={onClose} wide icon={Code2} title={`MikroTik Raw Rule · ${u.username}`}>
-      <pre dir="ltr" className="mono overflow-x-auto rounded-xl border border-white/8 bg-ink p-4 text-left text-xs leading-6 text-zinc-300">{JSON.stringify(raw, null, 2)}</pre>
+      <pre dir="ltr" className="mono overflow-x-auto well rounded-2xl p-4 text-left text-xs leading-6 text-zinc-300">{JSON.stringify(raw, null, 2)}</pre>
       <p className="mt-3 text-xs text-silver">خروجی خام REST از <Mono>THR-EDGE-01</Mono>. شمارنده <Mono>bytes</Mono> به‌صورت <Mono>upload/download</Mono> است.</p>
     </Modal>
   );
@@ -270,7 +270,7 @@ function UsersTable() {
         </div>
         <div className="flex gap-1.5 overflow-x-auto">
           {[['all', 'همه'], ['active', 'Active'], ['quota', 'Quota Exceeded'], ['expired', 'Expired'], ['disabled', 'Disabled']].map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id} className={cx('shrink-0 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap', filter === id ? 'border-brand2 bg-brand/20' : 'border-white/10 text-silver hover:text-white')}>
+            <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id} className={cx('shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold whitespace-nowrap', filter === id ? 'bg-white/[0.1] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.14)]' : 'text-zinc-500 hover:text-white')}>
               {label} <Mono className="opacity-60">{id === 'all' ? s.users.length : s.users.filter((u) => u.status === id).length}</Mono>
             </button>
           ))}
@@ -279,7 +279,7 @@ function UsersTable() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-white/[0.03] text-xs text-silver">
+            <thead className="text-[11px] text-zinc-500">
               <tr>{['کاربر', 'MikroTik IP', 'مصرف Simple Queue (bytes-in / bytes-out)', 'انقضا', 'وضعیت', 'عملیات'].map((h) => <th key={h} className="px-3 py-3 text-start font-bold whitespace-nowrap">{h}</th>)}</tr>
             </thead>
             <tbody>
@@ -405,7 +405,7 @@ function Rcon({ id, onClose }) {
     <Drawer open onClose={onClose} icon={Terminal} title={`RCON · ${v.name}`}>
       <div className="grid grid-cols-3 gap-2 text-center">
         {[['Map', v.map], ['Players', `${v.players}/${v.max}`], ['Ping', `${v.ping}ms`]].map(([k, val]) => (
-          <div key={k} className="rounded-xl bg-white/[0.04] py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[10px] text-silver">{k}</Mono></div>
+          <div key={k} className="well rounded-2xl py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[10px] text-silver">{k}</Mono></div>
         ))}
       </div>
 
@@ -419,7 +419,7 @@ function Rcon({ id, onClose }) {
         <Btn variant="ghost" icon={Activity} onClick={() => exec('status')}><Mono>status</Mono></Btn>
       </div>
 
-      <div dir="ltr" className="mono mt-4 h-64 overflow-y-auto rounded-xl border border-white/8 bg-ink p-3 text-left text-xs leading-6" aria-live="polite">
+      <div dir="ltr" className="mono mt-4 h-64 overflow-y-auto well rounded-2xl p-3 text-left text-xs leading-6" aria-live="polite">
         {out.map((l, i) => (
           <div key={i} className={cx('whitespace-pre-wrap', l.t === 'in' && 'text-brand2', l.t === 'sys' && 'text-zinc-500', l.t === 'out' && 'text-zinc-200')}>{l.t === 'in' ? `] ${l.text}` : l.text}</div>
         ))}
@@ -439,7 +439,7 @@ function Rcon({ id, onClose }) {
       <h4 className="mt-6 mb-2 flex items-center gap-2 text-sm font-black"><Users className="size-4 text-brand2" /> بازیکن‌های آنلاین <Mono className="text-silver">({v.list.length})</Mono></h4>
       <ul className="space-y-1.5">
         {v.list.map((p) => (
-          <li key={p.name} className="flex items-center gap-3 rounded-lg bg-white/[0.03] px-3 py-1.5">
+          <li key={p.name} className="flex items-center gap-3 well rounded-xl px-3 py-1.5">
             <Mono className="min-w-0 flex-1 truncate text-sm font-bold">{p.name}</Mono>
             <Mono className="text-xs text-silver">{p.k}/{p.d}</Mono>
             <Mono className={cx('w-12 text-end text-xs', p.ping < 30 ? 'text-ok' : 'text-warn')}>{p.ping}ms</Mono>
@@ -490,7 +490,7 @@ function ServerForm({ initial, onClose }) {
         <Field label="هاست / آی‌پی" error={e('host')}><input id="gs-host" dir="ltr" value={f.host} onChange={up('host')} placeholder="retake3.doping.games" className="field mono" /></Field>
         <Field label="پورت" error={e('port')}><input id="gs-port" dir="ltr" inputMode="numeric" value={f.port} onChange={up('port')} className="field mono" /></Field>
         <Field label="ظرفیت" error={e('max')}><input id="gs-max" dir="ltr" inputMode="numeric" value={f.max} onChange={up('max')} className="field mono" /></Field>
-        <div className="flex items-center justify-between rounded-xl border border-white/8 px-4"><span className="text-sm font-bold">فقط VIP</span><Toggle checked={f.vip} onChange={(v) => setF({ ...f, vip: v })} label="فقط VIP" /></div>
+        <div className="flex items-center justify-between well rounded-2xl px-4"><span className="text-sm font-bold">فقط VIP</span><Toggle checked={f.vip} onChange={(v) => setF({ ...f, vip: v })} label="فقط VIP" /></div>
       </div>
     </Modal>
   );
@@ -509,13 +509,13 @@ function GameServers() {
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="bg-white/[0.03] text-xs text-silver">
+            <thead className="text-[11px] text-zinc-500">
               <tr>{['سرور', 'آدرس', 'مپ', 'بازیکن', 'پینگ', 'وضعیت', 'عملیات'].map((h) => <th key={h} className="px-3 py-3 text-start font-bold">{h}</th>)}</tr>
             </thead>
             <tbody>
               {s.servers.map((v) => (
                 <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.02]">
-                  <td className="px-3 py-2.5"><Mono className="block font-bold">{v.name}</Mono><Mono className="text-[11px] text-zinc-500">{v.game} · {v.tick}</Mono></td>
+                  <td className="px-3 py-2.5"><div className="flex items-center gap-3"><ModeEmblem mode={v.mode} vip={v.vip} className="size-9 shrink-0" /><div className="min-w-0"><Mono className="block font-bold">{v.name}</Mono><Mono className="text-[11px] text-zinc-500">{v.game} · {v.tick}</Mono></div></div></td>
                   <td className="px-3 py-2.5"><Mono className="text-xs">{v.host}:{v.port}</Mono></td>
                   <td className="px-3 py-2.5"><Mono className="text-xs font-bold">{v.map}</Mono></td>
                   <td className="px-3 py-2.5"><div className="w-28"><Mono className="text-xs">{v.players}/{v.max}</Mono><Progress value={(v.players / v.max) * 100} h="h-1.5" className="mt-1" /></div></td>
@@ -575,7 +575,7 @@ function Sales() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="p-5 lg:col-span-2">
-        <h3 className="flex items-center gap-2 font-black"><Banknote className="size-4 text-brand2" /> قیمت پلن‌ها (تومان · ماهانه)</h3>
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Banknote className="size-4 text-brand2" /> قیمت پلن‌ها (تومان · ماهانه)</h3>
         <p className="mt-1 text-xs text-silver">هر تغییری همین حالا توی فروشگاه اعمال می‌شه.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {TIERS.map((t) => (
@@ -594,7 +594,7 @@ function Sales() {
       </Card>
 
       <Card className="p-5">
-        <h3 className="flex items-center gap-2 font-black"><BadgePercent className="size-4 text-brand2" /> کدهای تخفیف</h3>
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><BadgePercent className="size-4 text-brand2" /> کدهای تخفیف</h3>
         <div className="mt-4 grid grid-cols-[1fr_5rem_5rem_auto] items-end gap-2">
           <Field label="کد"><input id="dc-code" dir="ltr" value={code.code} onChange={(e) => setCode({ ...code, code: e.target.value })} placeholder="NOWRUZ" className="field mono uppercase" /></Field>
           <Field label="درصد"><NumInput id="dc-pct" value={code.percent} onChange={(v) => setCode({ ...code, percent: v })} /></Field>
@@ -604,7 +604,7 @@ function Sales() {
         {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
         <ul className="mt-4 space-y-2">
           {s.discounts.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-3 py-2">
+            <li key={d.id} className="flex items-center gap-3 well rounded-2xl px-3 py-2">
               <div className="min-w-0 flex-1">
                 <Mono className="block font-bold">{d.code}</Mono>
                 <Mono className="text-[11px] text-silver">{d.percent}% · {d.used}/{d.max} used</Mono>
@@ -618,10 +618,10 @@ function Sales() {
       </Card>
 
       <Card className="p-5">
-        <h3 className="flex items-center gap-2 font-black"><CreditCard className="size-4 text-brand2" /> درگاه‌های پرداخت</h3>
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><CreditCard className="size-4 text-brand2" /> درگاه‌های پرداخت</h3>
         <ul className="mt-4 space-y-2">
           {s.gateways.map((g) => (
-            <li key={g.id} className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-3 py-3">
+            <li key={g.id} className="flex items-center gap-3 well rounded-2xl px-3 py-3">
               <div className="min-w-0 flex-1">
                 <div className="font-bold">{g.name}</div>
                 <div className="text-[11px] text-silver">{g.kind} · <Mono>{g.key}</Mono></div>
@@ -638,7 +638,7 @@ function Sales() {
             </li>
           ))}
         </ul>
-        <div className="mt-4 rounded-xl border border-white/8 p-4">
+        <div className="mt-4 well rounded-2xl p-4">
           <div className="text-xs text-silver">فروش ثبت‌شده در این نشست (حساب نمونه)</div>
           <div className="mt-1 text-2xl font-black">{toman(paid.reduce((a, i) => a + i.amount, 0))}</div>
           <div className="text-[11px] text-zinc-500">{fa(paid.length)} تراکنش موفق · {fa(s.invoices.length - paid.length)} ناموفق</div>
@@ -669,7 +669,7 @@ function Logs() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
           {L_TYPES.map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setType(id)} aria-pressed={type === id} className={cx('shrink-0 rounded-lg border px-3 py-1.5 text-xs font-bold whitespace-nowrap', type === id ? 'border-brand2 bg-brand/20' : 'border-white/10 text-silver hover:text-white')}>{label}</button>
+            <button key={id} type="button" onClick={() => setType(id)} aria-pressed={type === id} className={cx('shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold whitespace-nowrap', type === id ? 'bg-white/[0.1] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.14)]' : 'text-zinc-500 hover:text-white')}>{label}</button>
           ))}
         </div>
         <select id="log-level" value={level} onChange={(e) => setLevel(e.target.value)} className="field w-auto" aria-label="سطح">
@@ -722,22 +722,21 @@ export default function Admin() {
   ];
   const Current = TABS.find((t) => t.id === tab).C;
   return (
-    <div className="gutter mx-auto max-w-7xl py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="gutter mx-auto max-w-7xl pt-14">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black">مرکز کنترل دوپینگ</h1>
-          <p className="text-sm text-silver">نقش: <Mono className="font-bold text-white">SUPER_ADMIN</Mono> · نشست از <Mono>10.0.0.2</Mono></p>
+          <div className="eyebrow">Control center · SUPER_ADMIN · 10.0.0.2</div>
+          <h1 className="mt-4 text-4xl font-extralight sm:text-5xl">مرکز کنترل <span className="font-black">دوپینگ</span></h1>
         </div>
         <Badge tone={alerts ? 'bad' : 'ok'} icon={ShieldAlert}>{alerts ? `${fa(alerts)} هشدار باز` : 'بدون هشدار'}</Badge>
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={Activity} label="کاربر آنلاین (حساب‌های نمونه)" value={<Mono>{online}/{s.users.length}</Mono>} />
+      <div className="mt-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat icon={Activity} label="کاربر آنلاین (حساب‌های نمونه)" value={<Mono>{online}<span className="text-lg text-zinc-600">/{s.users.length}</span></Mono>} />
         <Stat icon={Waypoints} label="WireGuard Peers فعال" value={<Mono>{peers}</Mono>} sub="روی نودهای ورودی" />
         <Stat icon={Gauge} label="بیشترین بار CPU" value={<Mono>{Math.max(...s.routers.map((r) => r.cpu))}%</Mono>} tone={Math.max(...s.routers.map((r) => r.cpu)) > 80 ? 'text-brand2' : 'text-white'} />
         <Stat icon={Crosshair} label="بازیکن روی سرورها" value={<Mono>{s.servers.reduce((a, v) => a + v.players, 0)}</Mono>} />
       </div>
-      <Tabs tabs={TABS} value={tab} onChange={setTab} className="mt-5" />
-      <div className="mt-5"><Current /></div>
+      <RailLayout tabs={TABS} value={tab} onChange={setTab}><Current /></RailLayout>
     </div>
   );
 }

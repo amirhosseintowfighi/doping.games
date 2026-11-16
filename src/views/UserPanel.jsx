@@ -5,7 +5,8 @@ import {
   Link2, Plus, QrCode, Receipt, RefreshCw, Send, ShieldCheck, Trash2, Unlink, Wallet, Wifi, Zap,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
-import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, Tabs, Toggle } from '../ui.jsx';
+import { TickRing, Wave } from '../art.jsx';
+import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
 import { daysLeft, DNS, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, WG, wgKey } from '../data.js';
 
 const STATUS = {
@@ -13,25 +14,6 @@ const STATUS = {
 };
 
 /* ───────────────────────── Dashboard ───────────────────────── */
-
-function Gauge({ pct, children }) {
-  const R = 84;
-  const C = 2 * Math.PI * R;
-  const color = pct >= 90 ? '#FF1E27' : pct >= 70 ? '#F59E0B' : '#10B981';
-  return (
-    <div className="relative mx-auto aspect-square w-full max-w-[230px]">
-      <svg viewBox="0 0 200 200" className="size-full -rotate-90" aria-hidden="true">
-        <circle cx="100" cy="100" r={R} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="14" />
-        <circle
-          cx="100" cy="100" r={R} fill="none" stroke={color} strokeWidth="14" strokeLinecap="round"
-          strokeDasharray={C} strokeDashoffset={C * (1 - Math.min(1, pct / 100))}
-          style={{ transition: 'stroke-dashoffset .8s ease, stroke .4s', filter: `drop-shadow(0 0 8px ${color}88)` }}
-        />
-      </svg>
-      <div className="absolute inset-0 grid place-items-center text-center">{children}</div>
-    </div>
-  );
-}
 
 function PayFromWallet({ open, onClose, title, icon, price, children, onPaid, cta }) {
   const { s, set, toast } = useStore();
@@ -55,7 +37,7 @@ function PayFromWallet({ open, onClose, title, icon, price, children, onPaid, ct
       }
     >
       {children}
-      <div className="mt-4 flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm">
+      <div className="mt-4 flex items-center justify-between well rounded-2xl px-4 py-3 text-sm">
         <span className="flex items-center gap-2 text-silver"><Wallet className="size-4" /> موجودی کیف پول</span>
         <span className={cx('font-black', short && 'text-brand2')}>{toman(s.wallet)}</span>
       </div>
@@ -80,25 +62,26 @@ function Dashboard({ setTab }) {
   const extraPrice = pack * s.pricing.extraPerGb;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card red className="p-5 sm:p-6 lg:col-span-2">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_290px]">
+      <Card red className="min-w-0 p-6 sm:p-8">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2 font-black"><Zap className="size-4 text-brand2" /> وضعیت حجم و اشتراک</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Zap className="size-4 text-brand2" /> وضعیت حجم و اشتراک</h3>
           <div className="flex items-center gap-2">
             <Badge tone="brand" icon={Crown}>{PLAN_NAME[me.plan]}</Badge>
             <Badge tone={tone}>{st}</Badge>
           </div>
         </div>
-        <div className="mt-5 grid items-center gap-6 sm:grid-cols-[230px_1fr]">
-          <Gauge pct={unlimited ? 4 : pct}>
+        <div className="mt-6 grid items-center gap-8 md:grid-cols-[270px_minmax(0,1fr)]">
+          <TickRing pct={unlimited ? 3 : pct} className="mx-auto w-full max-w-[280px]">
             <div>
-              <div className="text-xs text-silver">حجم باقی‌مانده</div>
-              <Mono className="block text-4xl font-black">{unlimited ? '∞' : gb(Math.max(0, me.quota - used))}</Mono>
-              <Mono className="text-sm text-silver">{unlimited ? 'Unlimited' : `GB / ${me.quota / GB} GB`}</Mono>
+              <div className="eyebrow">Remaining</div>
+              <Mono className="mt-1 block text-6xl leading-none font-extralight">{unlimited ? '∞' : gb(Math.max(0, me.quota - used))}</Mono>
+              <Mono className="mt-2 block text-xs text-zinc-500">{unlimited ? 'UNLIMITED' : `GB / ${me.quota / GB} GB`}</Mono>
+              <div className="mt-1 text-[11px] text-zinc-500">حجم باقی‌مانده</div>
             </div>
-          </Gauge>
+          </TickRing>
           <div className="min-w-0">
-            <p className="text-sm leading-7">
+            <p className="text-[13px] leading-7 text-zinc-300">
               {unlimited ? (
                 <>اشتراک زمانی بدون سقف حجم · <Mono className="font-bold">{gb(used)} GB</Mono> مصرف شده</>
               ) : (
@@ -107,17 +90,17 @@ function Dashboard({ setTab }) {
             </p>
             {!unlimited && <Progress value={pct} className="mt-3" h="h-2.5" />}
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white/[0.04] p-3">
+              <div className="well rounded-2xl p-3">
                 <div className="flex items-center gap-1.5 text-xs text-silver"><ArrowDown className="size-3.5 text-ok" /> دانلود</div>
                 <Mono className="text-lg font-black">{gb(me.down)} <span className="text-xs text-silver">GB</span></Mono>
               </div>
-              <div className="rounded-xl bg-white/[0.04] p-3">
+              <div className="well rounded-2xl p-3">
                 <div className="flex items-center gap-1.5 text-xs text-silver"><ArrowUp className="size-3.5 text-warn" /> آپلود</div>
                 <Mono className="text-lg font-black">{gb(me.up)} <span className="text-xs text-silver">GB</span></Mono>
               </div>
             </div>
             <p className="mt-3 flex items-center gap-1.5 text-[11px] text-zinc-500">
-              <RefreshCw className="size-3" /> همگام با Simple Queue میکروتیک <Mono>dp-{me.id}</Mono> · هر ۵ دقیقه
+              <RefreshCw className="size-3 shrink-0" /> <span>همگام با Simple Queue میکروتیک (<Mono>dp-{me.id}</Mono>) هر ۵ دقیقه</span>
             </p>
           </div>
         </div>
@@ -127,17 +110,17 @@ function Dashboard({ setTab }) {
         </div>
       </Card>
 
-      <div className="flex flex-col gap-4">
-        <Card className="p-5">
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
+        <Card className="p-6">
           <div className="flex items-center gap-2 text-xs text-silver"><CalendarClock className="size-4" /> روزهای باقی‌مانده</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className={cx('text-5xl font-black', days <= 3 ? 'text-brand2' : days <= 7 ? 'text-warn' : 'text-white')}>{fa(days)}</span>
+            <span className={cx('text-7xl leading-none font-extralight', days <= 3 ? 'text-brand2' : days <= 7 ? 'text-warn' : 'text-white')}>{fa(days)}</span>
             <span className="text-silver">روز</span>
           </div>
           <div className="mt-1 text-xs text-zinc-500">پایان اشتراک: {faDate(me.expires)}</div>
           <Progress value={(days / 30) * 100} tone="bg-white/70" className="mt-3" />
         </Card>
-        <Card className="flex-1 p-5">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-silver"><Wifi className="size-4" /> اتصال فعلی</div>
             {me.peer && me.online ? <Badge tone="ok"><Dot /> متصل</Badge> : <Badge tone="bad">قطع</Badge>}
@@ -155,7 +138,7 @@ function Dashboard({ setTab }) {
               </div>
             ))}
           </dl>
-          <Btn variant="ghost" size="sm" className="mt-4 w-full" icon={KeyRound} onClick={() => setTab('connect')}>کانفیگ و QR اتصال</Btn>
+          <Btn variant="ghost" size="sm" className="mt-2 w-full" icon={KeyRound} onClick={() => setTab('connect')}>کانفیگ و QR اتصال</Btn>
         </Card>
       </div>
 
@@ -170,7 +153,7 @@ function Dashboard({ setTab }) {
         <p className="text-sm text-silver">حجم اضافه تا پایان همین دوره اعتبار داره و بلافاصله روی صف میکروتیک اعمال می‌شه.</p>
         <div className="mt-4 grid grid-cols-4 gap-2">
           {[5, 10, 20, 50].map((g) => (
-            <button key={g} type="button" onClick={() => setPack(g)} aria-pressed={pack === g} className={cx('rounded-xl border py-3 text-center transition', pack === g ? 'border-brand2 bg-brand/15' : 'border-white/10 hover:border-white/25')}>
+            <button key={g} type="button" onClick={() => setPack(g)} aria-pressed={pack === g} className={cx('relative rounded-2xl py-3 text-center transition', pack === g ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               <Mono className="block text-lg font-black">+{g}</Mono>
               <Mono className="text-[10px] text-silver">GB</Mono>
             </button>
@@ -265,11 +248,11 @@ PersistentKeepalive = 25
     <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
       <Card className="min-w-0 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2 font-black"><KeyRound className="size-4 text-brand2" /> کانفیگ WireGuard</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><KeyRound className="size-4 text-brand2" /> کانفیگ WireGuard</h3>
           <Mono className="text-xs text-silver">doping-thr1.conf</Mono>
         </div>
         <div className="relative mt-4">
-          <pre dir="ltr" className="mono overflow-x-auto rounded-xl border border-white/8 bg-ink p-4 text-left text-xs leading-6 text-zinc-300">{show ? conf : masked}</pre>
+          <pre dir="ltr" className="mono overflow-x-auto well rounded-2xl p-4 text-left text-xs leading-6 text-zinc-300">{show ? conf : masked}</pre>
           <button type="button" onClick={() => setShow(!show)} className="absolute top-2 right-2 flex items-center gap-1.5 rounded-lg bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20">
             {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />} {show ? 'مخفی کردن کلید' : 'نمایش کلید'}
           </button>
@@ -286,7 +269,7 @@ PersistentKeepalive = 25
           <h3 className="font-black">مشخصات اتصال</h3>
           <div className="mt-3 space-y-2">
             {[['Endpoint', WG.endpoint], ['AllowedIPs', WG.allowed], ['Public Key', WG.serverKey], ['Address', `${me.ip}/32`]].map(([label, v]) => (
-              <div key={label} className="flex items-center gap-2 rounded-xl border border-white/8 bg-ink/60 py-1 ps-3 pe-1">
+              <div key={label} className="flex items-center gap-2 well rounded-2xl py-1 ps-3 pe-1">
                 <div className="min-w-0 flex-1">
                   <Mono className="block text-[10px] text-zinc-500">{label}</Mono>
                   <Mono className="block truncate text-xs font-bold">{v}</Mono>
@@ -297,7 +280,7 @@ PersistentKeepalive = 25
           </div>
         </Card>
         <Card className="border-amber-500/20 p-5">
-          <h3 className="flex items-center gap-2 font-black"><Fingerprint className="size-4 text-warn" /> ریست کلید اتصال</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Fingerprint className="size-4 text-warn" /> ریست کلید اتصال</h3>
           <p className="mt-2 text-xs leading-6 text-silver">
             اگه کانفیگت لو رفته یا روی دستگاه دیگه‌ای مونده، کلید رو ریست کن. Peer روی میکروتیک با کلید جدید بازسازی می‌شه و همه دستگاه‌های قبلی قطع می‌شن.
           </p>
@@ -366,11 +349,11 @@ function SmartDns() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card red className="p-5 sm:p-6">
-        <h3 className="flex items-center gap-2 font-black"><Globe className="size-4 text-brand2" /> ثبت آی‌پی برای DNS</h3>
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Globe className="size-4 text-brand2" /> ثبت آی‌پی برای DNS</h3>
         <p className="mt-2 text-xs leading-6 text-silver">DNS دوپینگ فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. هر بار آی‌پی اینترنتت عوض شد، همین دکمه رو بزن.</p>
-        <div className="mt-4 rounded-xl border border-white/10 bg-ink/60 p-4 text-center">
+        <div className="mt-4 well rounded-2xl p-4 text-center">
           <div className="text-xs text-silver">آی‌پی عمومی فعلی تو</div>
-          <Mono className="mt-1 block text-3xl font-black">{detected.ip ?? '…'}</Mono>
+          <Mono className="mt-2 block text-4xl font-extralight">{detected.ip ?? '…'}</Mono>
           {detected.ip && !detected.real && <div className="mt-1 text-[11px] text-zinc-500">آی‌پی نمونه (تشخیص خودکار در این محیط در دسترس نیست)</div>}
         </div>
         <Btn size="lg" className="mt-4 w-full" icon={ShieldCheck} busy={busy} disabled={!detected.ip || already} onClick={() => register(detected.ip, 'ثبت خودکار')}>
@@ -390,7 +373,7 @@ function SmartDns() {
           <h3 className="font-black">آدرس‌های DNS</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {[['Primary DNS', DNS.primary], ['Secondary DNS', DNS.secondary]].map(([l, v]) => (
-              <div key={l} className="flex items-center gap-2 rounded-xl border border-white/8 bg-ink/60 py-1.5 ps-3 pe-1.5">
+              <div key={l} className="flex items-center gap-2 well rounded-2xl py-1.5 ps-3 pe-1.5">
                 <div className="min-w-0 flex-1">
                   <Mono className="block text-[10px] text-zinc-500">{l}</Mono>
                   <Mono className="block text-base font-black">{v}</Mono>
@@ -408,7 +391,7 @@ function SmartDns() {
           </div>
           <ul className="mt-3 space-y-2">
             {s.dnsIps.map((x) => (
-              <li key={x.ip} className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-3 py-2">
+              <li key={x.ip} className="flex items-center gap-3 well rounded-2xl px-3 py-2">
                 <Dot />
                 <div className="min-w-0 flex-1">
                   <Mono className="block text-sm font-bold">{x.ip}</Mono>
@@ -422,7 +405,7 @@ function SmartDns() {
                 </button>
               </li>
             ))}
-            {!s.dnsIps.length && <li className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs text-silver">هنوز آی‌پی‌ای ثبت نکردی. تا ثبت نکنی DNS جواب نمی‌ده.</li>}
+            {!s.dnsIps.length && <li className="rounded-2xl border border-dashed border-white/10 p-5 text-center text-xs text-silver">هنوز آی‌پی‌ای ثبت نکردی. تا ثبت نکنی DNS جواب نمی‌ده.</li>}
           </ul>
         </Card>
       </div>
@@ -452,7 +435,7 @@ function Vip() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="p-5 sm:p-6">
-        <h3 className="flex items-center gap-2 font-black"><Link2 className="size-4 text-brand2" /> اتصال اکانت Steam</h3>
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Link2 className="size-4 text-brand2" /> اتصال اکانت Steam</h3>
         <p className="mt-2 text-xs leading-6 text-silver">امتیازهای VIP با SteamID64 شناخته می‌شن. آیدی ۱۷ رقمیت رو از پروفایل Steam یا سایت <Mono>steamid.io</Mono> بردار.</p>
         {s.steamId ? (
           <div className="mt-4 flex items-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4">
@@ -474,12 +457,12 @@ function Vip() {
       </Card>
       <Card className="p-5 sm:p-6">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2 font-black"><Crown className="size-4 text-warn" /> امتیازهای VIP سرورهای CS2</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Crown className="size-4 text-warn" /> امتیازهای VIP سرورهای CS2</h3>
           <Badge tone={pro ? 'ok' : 'mute'}>{pro ? 'فعال با پکیج پرو' : 'نیاز به پکیج پرو'}</Badge>
         </div>
         <ul className="mt-4 space-y-2">
           {PERKS.map(([key, title, desc]) => (
-            <li key={key} className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3">
+            <li key={key} className="flex items-center gap-3 well rounded-2xl px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold">{title}</div>
                 <div className="text-xs text-silver">{desc}</div>
@@ -528,13 +511,13 @@ function Billing() {
       <Card red className="flex flex-col p-5 sm:p-6">
         <div className="flex items-center gap-2 text-xs text-silver"><Wallet className="size-4" /> موجودی کیف پول</div>
         <div className="mt-2 flex flex-wrap items-baseline gap-2">
-          <span className="text-4xl font-black">{fa(s.wallet)}</span><span className="text-silver">تومان</span>
+          <span className="text-6xl leading-none font-extralight">{fa(s.wallet)}</span><span className="text-silver">تومان</span>
         </div>
         <p className="mt-3 text-xs leading-6 text-silver">با کیف پول، تمدید و خرید حجم اضافه یک‌کلیکی انجام می‌شه.</p>
         <Btn className="mt-auto" icon={Plus} onClick={() => setOpen(true)}>افزایش موجودی</Btn>
       </Card>
       <Card className="min-w-0 p-5">
-        <h3 className="flex items-center gap-2 font-black"><Receipt className="size-4 text-brand2" /> تاریخچه فاکتورها</h3>
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Receipt className="size-4 text-brand2" /> تاریخچه فاکتورها</h3>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[520px] text-sm">
             <thead className="text-xs text-silver">
@@ -562,7 +545,7 @@ function Billing() {
       >
         <div className="grid grid-cols-4 gap-2">
           {[50_000, 100_000, 200_000, 500_000].map((a) => (
-            <button key={a} type="button" onClick={() => setAmount(a)} aria-pressed={amount === a} className={cx('rounded-xl border py-2.5 text-xs font-bold transition', amount === a ? 'border-brand2 bg-brand/15' : 'border-white/10 hover:border-white/25')}>
+            <button key={a} type="button" onClick={() => setAmount(a)} aria-pressed={amount === a} className={cx('relative rounded-2xl py-2.5 text-xs font-bold transition', amount === a ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               {fa(a / 1000)} هزار
             </button>
           ))}
@@ -573,7 +556,7 @@ function Billing() {
         <div className="mt-4 text-xs font-bold text-silver">درگاه پرداخت</div>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {gws.map((g) => (
-            <button key={g.id} type="button" onClick={() => setGw(g.id)} aria-pressed={gw === g.id} className={cx('rounded-xl border p-3 text-start transition', gw === g.id ? 'border-brand2 bg-brand/15' : 'border-white/10 hover:border-white/25')}>
+            <button key={g.id} type="button" onClick={() => setGw(g.id)} aria-pressed={gw === g.id} className={cx('relative rounded-2xl p-3 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               <span className="block text-sm font-bold">{g.name}</span>
               <span className="block text-[11px] text-silver">{g.kind}</span>
             </button>
@@ -615,13 +598,13 @@ function Tickets() {
     <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2 font-black"><LifeBuoy className="size-4 text-brand2" /> تیکت‌های پشتیبانی</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><LifeBuoy className="size-4 text-brand2" /> تیکت‌های پشتیبانی</h3>
           <Btn size="sm" icon={Plus} onClick={() => setCreating(true)}>تیکت جدید</Btn>
         </div>
         <ul className="mt-3 space-y-2">
           {s.tickets.map((x) => (
             <li key={x.id}>
-              <button type="button" onClick={() => setSel(x.id)} className={cx('w-full rounded-xl border p-3 text-start transition', sel === x.id ? 'border-brand/50 bg-brand/10' : 'border-white/8 hover:border-white/20')}>
+              <button type="button" onClick={() => setSel(x.id)} className={cx('w-full relative rounded-2xl p-3 text-start transition', sel === x.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
                 <div className="flex items-center justify-between gap-2">
                   <Mono className="text-[11px] text-silver">{x.id}</Mono>
                   <Badge tone={T_STATUS[x.status][1]}>{T_STATUS[x.status][0]}</Badge>
@@ -636,7 +619,7 @@ function Tickets() {
       <Card className="flex min-h-[360px] min-w-0 flex-col p-5">
         {t ? (
           <>
-            <div className="border-b border-white/8 pb-3">
+            <div className="border-b border-white/[0.07] pb-4">
               <div className="font-black">{t.subject}</div>
               <div className="text-xs text-silver"><Mono>{t.id}</Mono> · واحد {t.dept}</div>
             </div>
@@ -689,19 +672,25 @@ const TABS = [
 ];
 
 export default function UserPanel() {
-  const { me } = useStore();
+  const { s, me } = useStore();
   const [tab, setTab] = useState('dash');
   const Current = TABS.find((t) => t.id === tab).C;
   return (
-    <div className="gutter mx-auto max-w-7xl py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black">سلام آرش، آماده‌ای؟</h1>
-          <p className="text-sm text-silver">پنل کاربری · <Mono>{me.email}</Mono></p>
-        </div>
-      </div>
-      <Tabs tabs={TABS} value={tab} onChange={setTab} className="mt-5" />
-      <div className="mt-5"><Current setTab={setTab} /></div>
+    <div className="gutter mx-auto max-w-7xl pt-14">
+      <div className="eyebrow">Gamer panel · {me.email}</div>
+      <h1 className="mt-4 text-4xl font-extralight sm:text-5xl">سلام آرش، <span className="font-black">آماده‌ای؟</span></h1>
+      <RailLayout
+        tabs={TABS} value={tab} onChange={setTab}
+        foot={
+          <div className="well rounded-2xl p-4">
+            <div className="flex items-center justify-between"><span className="eyebrow">Tunnel</span><Mono className="text-[11px] text-ok">{me.peer && me.online ? 'UP' : 'DOWN'}</Mono></div>
+            <Wave seed={s.tick} jitter={me.peer && me.online ? 3 : 0} color={me.peer && me.online ? '#10B981' : '#52525B'} className="mt-2 h-7 w-full" />
+            <Mono className="mt-1 block text-[11px] text-zinc-500">{me.ip}/32 · THR-EDGE-01</Mono>
+          </div>
+        }
+      >
+        <Current setTab={setTab} />
+      </RailLayout>
     </div>
   );
 }

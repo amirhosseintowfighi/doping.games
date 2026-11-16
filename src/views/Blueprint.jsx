@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, Clock, Database, FileCode2, Fingerprint, Gauge, Globe, KeyRound, Lock, Repeat, Router, ScanLine, Server, ShieldCheck, UserCog } from 'lucide-react';
+import { RouteMap } from '../art.jsx';
 import { Badge, Card, CopyBtn, cx, Mono, SectionTitle } from '../ui.jsx';
 
 // The tab renders the real backend sources from /backend, so what you read here is what ships.
@@ -84,7 +85,7 @@ const DEFENSE = [
 
 function Node({ n }) {
   return (
-    <div className="glass flex min-w-0 flex-1 basis-36 flex-col items-center gap-1 rounded-xl px-3 py-3 text-center">
+    <div className="well flex min-w-0 flex-1 basis-36 flex-col items-center gap-1 rounded-2xl px-3 py-4 text-center">
       <n.icon className="size-5 text-brand2" />
       <div className="text-sm font-black">{n.title}</div>
       <div className="text-[11px] text-silver">{n.sub}</div>
@@ -103,15 +104,16 @@ export default function Blueprint() {
   const open = (p) => { setPath(p); document.getElementById('code')?.scrollIntoView({ block: 'start' }); };
 
   return (
-    <div className="gutter mx-auto max-w-7xl py-8">
+    <div className="gutter mx-auto max-w-7xl pt-14">
       <SectionTitle
-        kicker="معماری بک‌اند، API میکروتیک و امنیت"
+        eyebrow="Backend · MikroTik API · Security"
         title="نقشه فنی دوپینگ"
         desc="کد این بخش همون فایل‌های پوشه backend در مخزن پروژه‌ست: TypeScript برای Next.js App Router، PostgreSQL و Redis."
         action={<Badge tone="ok" icon={ShieldCheck}><Mono>tsc --strict</Mono> بدون خطا</Badge>}
       />
 
-      <Card className="mt-6 p-5">
+      <Card className="mt-10 overflow-hidden p-6">
+        <RouteMap exit="mct" ping={28} ispPing={145} className="-mx-6 -mt-6 mb-2 block w-[calc(100%+3rem)] max-w-none" />
         <div className="text-xs font-black text-silver">مسیر داده (Data Plane)</div>
         <div className="mt-3 flex flex-wrap items-stretch gap-2">
           {FLOW.map((n, i) => (
@@ -125,11 +127,11 @@ export default function Blueprint() {
         <div className="mt-3 flex flex-wrap gap-2">{CONTROL.map((n) => <Node key={n.title} n={n} />)}</div>
       </Card>
 
-      <h3 className="mt-8 text-lg font-black">دفاع در عمق</h3>
+      <h3 className="mt-16 text-2xl font-light">دفاع در عمق</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {DEFENSE.map((d) => (
-          <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group rounded-2xl p-4 text-start transition hover:border-brand/40">
-            <div className="flex items-center gap-2 font-black"><d.icon className="size-4 text-brand2" />{d.title}</div>
+          <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group relative rounded-2xl p-5 text-start transition duration-500 hover:-translate-y-0.5">
+            <div className="flex items-center gap-2.5 text-[15px] font-black"><d.icon className="size-4 text-brand2" />{d.title}</div>
             <p className="mt-2 text-xs leading-6 text-silver">{d.text}</p>
             <Mono className="mt-2 block truncate text-[11px] text-zinc-500 group-hover:text-brand2">{d.file}</Mono>
           </button>
@@ -148,7 +150,7 @@ export default function Blueprint() {
                   dir="ltr"
                   onClick={() => setPath(f.path)}
                   aria-current={path === f.path ? 'true' : undefined}
-                  className={cx('mono flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition', path === f.path ? 'bg-brand/20 text-white' : 'text-silver hover:bg-white/5 hover:text-white')}
+                  className={cx('mono flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition', path === f.path ? 'bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.1)]' : 'text-zinc-500 hover:bg-white/[0.03] hover:text-white')}
                 >
                   <FileCode2 className="size-3.5 shrink-0" />
                   <span className="truncate">{f.path.split('/').slice(-2).join('/')}</span>
@@ -167,9 +169,9 @@ export default function Blueprint() {
             <Mono className="text-[11px] text-zinc-500">{lines} lines</Mono>
             <CopyBtn text={file.code} label="کپی کد" />
           </div>
-          <div dir="ltr" className="max-h-[720px] overflow-auto bg-ink">
+          <div dir="ltr" className="max-h-[720px] overflow-auto bg-black/40">
             <pre className="mono flex min-w-max text-left text-[12px] leading-[1.7]">
-              <span aria-hidden="true" className="sticky left-0 bg-ink py-4 pr-3 pl-4 text-right text-zinc-700 select-none">
+              <span aria-hidden="true" className="sticky left-0 bg-[#08080b] py-4 pr-3 pl-4 text-right text-zinc-700 select-none">
                 {Array.from({ length: lines }, (_, i) => i + 1).join('\n')}
               </span>
               <code className="block py-4 pr-6 text-zinc-200">{html}</code>
