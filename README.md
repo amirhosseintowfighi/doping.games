@@ -23,6 +23,7 @@ npm test                    # builds, then runs the browser end-to-end test (nee
 | `src/views/Storefront.jsx` | Hero + ping simulator, live game-server hub, plan builder + checkout |
 | `src/views/UserPanel.jsx` | Quota telemetry, WireGuard config/QR/key reset, DNS whitelist, Steam VIP, wallet, tickets |
 | `src/views/Admin.jsx` | Router cluster + sync, users/quota table, game servers + RCON console, pricing/discounts/gateways, audit log |
+| `src/covers.js`, `src/assets/covers/` | Official game artwork (400×600 WebP), cover lookup, and the in-browser resize used for uploaded covers |
 | `src/views/Settings.jsx` | Admin → «تنظیمات سایت»: edit hero text, stats, sections, covered games, FAQ, plan features, DNS / WireGuard values, brand colour, footer |
 | `src/views/Blueprint.jsx` | Architecture tab; renders the real files from `backend/` |
 | `src/store.jsx`, `src/data.js` | In-browser simulation layer (seed data, live tick, quota enforcement) |
@@ -38,3 +39,12 @@ Public IPs in `src/data.js` are documentation ranges (RFC 5737) and hostnames ar
 The `backend/` code type-checks under `tsc --strict` but has not been run against a live RouterOS device, PostgreSQL, Redis or Zarinpal.
 To go live it needs a Next.js app around it (`@/` alias → `backend/`), `DATABASE_URL`, `REDIS_URL`, `APP_ORIGIN`,
 `ZARINPAL_MERCHANT_ID`, `DOPING_KMS_KEYS` / `DOPING_KMS_ACTIVE`, and the frontend wired to the API routes in place of the store.
+
+## Game artwork
+
+The covers in `src/assets/covers/` belong to their publishers and are used only to show which games the service supports.
+
+- Steam library capsules (Valve, EA, Activision, Electronic Arts / Respawn, KRAFTON, Facepunch): Counter-Strike 2, Dota 2, EA SPORTS FC 26, Call of Duty: Warzone, Apex Legends, PUBG: BATTLEGROUNDS, Rust.
+- VALORANT, Fortnite and Minecraft are not on Steam; their tiles are the official logos (via Wikimedia Commons) on a dark background.
+
+Check each publisher's brand and fan-content guidelines before production use. Covers can be replaced per game from Admin → «تنظیمات سایت».

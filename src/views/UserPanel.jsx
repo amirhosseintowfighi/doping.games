@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import {
-  ArrowDown, ArrowUp, CalendarClock, CircleAlert, Crown, Download, Eye, EyeOff, Fingerprint, Globe, KeyRound, LayoutDashboard, LifeBuoy,
+  ArrowDown, ArrowUp, CalendarClock, Check, Gamepad2, Monitor, Router as RouterIcon, Smartphone, CircleAlert, Crown, Download, Eye, EyeOff, Fingerprint, Globe, KeyRound, LayoutDashboard, LifeBuoy,
   Link2, Plus, QrCode, Receipt, RefreshCw, Send, ShieldCheck, Trash2, Unlink, Wallet, Wifi, Zap,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
@@ -139,6 +139,8 @@ function Dashboard({ setTab }) {
         </Card>
       </div>
 
+      <UsageChart />
+
       <PayFromWallet
         open={extra} onClose={() => setExtra(false)} title="خرید حجم اضافه" icon={Plus} price={extraPrice} cta="خرید حجم"
         onPaid={() => {
@@ -171,6 +173,169 @@ function Dashboard({ setTab }) {
         </p>
       </PayFromWallet>
     </div>
+  );
+}
+
+
+/* ───────────────────────── Usage chart ───────────────────────── */
+
+const DAY_MS = 86_400_000;
+/** Daily traffic for the last 14 days. Seeded per user so it stays put between renders. */
+function usageDays(seed) {
+  let x = [...seed].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const r = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
+  return Array.from({ length: 14 }, (_, i) => {
+    const weekend = [4, 5].includes(new Date(Date.now() - (13 - i) * DAY_MS).getDay());
+    const down = (0.05 + r() * 0.42) * (weekend ? 1.7 : 1);
+    return { at: Date.now() - (13 - i) * DAY_MS, down, up: down * (0.12 + r() * 0.1) };
+  });
+}
+
+function UsageChart() {
+  const { me } = useStore();
+  const days = useMemo(() => usageDays(me.id), [me.id]);
+  const [sel, setSel] = useState(days.length - 1);
+  const [show, setShow] = useState('both');
+  const val = (d) => (show === 'down' ? d.down : show === 'up' ? d.up : d.down + d.up);
+  const max = Math.max(...days.map(val)) * 1.1;
+  const d = days[sel];
+  const total = days.reduce((a, x) => a + val(x), 0);
+  return (
+    <Card className="p-6 xl:col-span-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[15px] font-black">مصرف ۱۴ روز اخیر</h3>
+          <p className="text-xs text-zinc-500">جمع: <Mono className="text-zinc-300">{total.toFixed(2)} GB</Mono> · میانگین روزانه <Mono className="text-zinc-300">{(total / days.length).toFixed(2)} GB</Mono></p>
+        </div>
+        <div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs" role="tablist" aria-label="نوع ترافیک">
+          {[['both', 'همه'], ['down', 'دانلود'], ['up', 'آپلود']].map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={show === id} onClick={() => setShow(id)} className={cx('rounded-md px-2.5 py-1 transition-colors', show === id ? 'bg-white/10 font-bold text-white' : 'text-zinc-400 hover:text-white')}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-6 flex h-36 items-end gap-1 sm:gap-1.5" dir="ltr" role="listbox" aria-label="روزها">
+        {days.map((x, i) => {
+          const on = i === sel;
+          return (
+            <button
+              key={x.at} type="button" role="option" aria-selected={on} aria-label={`${faDate(x.at)}: ${val(x).toFixed(2)} GB`}
+              onClick={() => setSel(i)} onMouseEnter={() => setSel(i)} onFocus={() => setSel(i)}
+              className="group flex h-full min-w-0 flex-1 flex-col justify-end"
+            >
+              <span className="flex w-full flex-col justify-end overflow-hidden rounded-t" style={{ height: `${(val(x) / max) * 100}%` }}>
+                {show !== 'down' && <span className={cx('w-full transition-colors', on ? 'bg-zinc-300' : 'bg-zinc-600 group-hover:bg-zinc-500')} style={{ flex: x.up }} />}
+                {show !== 'up' && <span className={cx('w-full transition-colors', on ? 'bg-white' : 'bg-zinc-400 group-hover:bg-zinc-300')} style={{ flex: x.down }} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] text-zinc-600" dir="ltr">
+        <span>{new Date(days[0].at).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' })}</span>
+        <span>امروز</span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl bg-ink px-4 py-3 text-sm" aria-live="polite">
+        <span className="font-bold">{sel === days.length - 1 ? 'امروز' : faDate(d.at)}</span>
+        <span className="flex items-center gap-1.5 text-zinc-400"><span className="size-2 rounded-sm bg-white" /> دانلود <Mono className="text-white">{d.down.toFixed(2)} GB</Mono></span>
+        <span className="flex items-center gap-1.5 text-zinc-400"><span className="size-2 rounded-sm bg-zinc-500" /> آپلود <Mono className="text-white">{d.up.toFixed(2)} GB</Mono></span>
+      </div>
+    </Card>
+  );
+}
+
+/* ───────────────────────── Setup guide ───────────────────────── */
+
+const DEVICES = [
+  { id: 'windows', label: 'ویندوز', icon: Monitor },
+  { id: 'android', label: 'اندروید', icon: Smartphone },
+  { id: 'ios', label: 'آیفون', icon: Smartphone },
+  { id: 'console', label: 'PS5 / Xbox', icon: Gamepad2 },
+  { id: 'router', label: 'روتر میکروتیک', icon: RouterIcon },
+];
+
+function SetupGuide({ onDownload, onQr }) {
+  const { s, me, set } = useStore();
+  const [dev, setDev] = useState('windows');
+  const { dns: DNS, wg: WG } = s.site;
+  const [host, port] = WG.endpoint.split(':');
+  const ros = [
+    `/interface wireguard add name=doping private-key="${s.myKeys.priv}" mtu=${WG.mtu}`,
+    `/interface wireguard peers add interface=doping public-key="${WG.serverKey}" preshared-key="${s.myKeys.psk}" endpoint-address=${host} endpoint-port=${port} allowed-address=0.0.0.0/0 persistent-keepalive=25s`,
+    `/ip address add address=${me.ip}/32 interface=doping`,
+    '/routing table add name=doping fib',
+    '/ip route add dst-address=0.0.0.0/0 gateway=doping routing-table=doping',
+    '/ip firewall nat add chain=srcnat out-interface=doping action=masquerade',
+    '/routing rule add src-address=192.168.88.50 action=lookup table=doping',
+  ].join('\n');
+  const STEPS = {
+    windows: [
+      ['برنامه WireGuard رو از سایت رسمیش نصب کن.', <Mono key="u" className="text-zinc-300">wireguard.com/install</Mono>],
+      ['فایل کانفیگ رو دانلود کن.', <Btn key="b" size="sm" variant="ghost" onClick={onDownload}>دانلود <Mono>.conf</Mono></Btn>],
+      ['توی WireGuard روی Import tunnel(s) from file بزن و همین فایل رو انتخاب کن.'],
+      ['Activate رو بزن. وضعیت باید Active بشه؛ بعد بازی رو باز کن.'],
+    ],
+    android: [
+      ['WireGuard رو از Google Play نصب کن.'],
+      ['توی برنامه روی + بزن و Scan from QR code رو انتخاب کن.', <Btn key="q" size="sm" variant="ghost" onClick={onQr}>نمایش QR</Btn>],
+      ['یک اسم بده (مثلاً Doping) و تانل رو روشن کن.'],
+    ],
+    ios: [
+      ['WireGuard رو از App Store نصب کن.'],
+      ['روی Add a tunnel و بعد Create from QR code بزن.', <Btn key="q" size="sm" variant="ghost" onClick={onQr}>نمایش QR</Btn>],
+      ['اجازه افزودن VPN رو بده و تانل رو روشن کن.'],
+    ],
+    console: [
+      ['کنسول‌ها برنامه WireGuard ندارن. برای رفع تحریم، DNS دستی بذار:', <Mono key="d" className="text-zinc-300">{DNS.primary} · {DNS.secondary}</Mono>],
+      ['آی‌پی اینترنت خونه رو از تب «DNS هوشمند» ثبت کن.'],
+      ['برای کاهش پینگ، کانفیگ رو روی روتر بذار (تب «روتر میکروتیک») تا ترافیک کنسول از تانل رد بشه.'],
+    ],
+    router: [
+      ['RouterOS نسخه ۷ لازمه. با Winbox یا SSH وارد ترمینال روتر شو.'],
+      ['این دستورها رو بزن. توی دستور آخر، آی‌پی کنسول یا کامپیوترت رو به‌جای 192.168.88.50 بذار.', <div key="c" className="mt-2 w-full"><pre dir="ltr" className="mono max-h-44 overflow-auto rounded-lg bg-ink p-3 text-left text-[11px] leading-5 text-zinc-300">{ros}</pre><CopyBtn text={ros} label="کپی دستورها" className="mt-2" /></div>],
+      ['از کنسول یک تست پینگ بگیر؛ باید زیر ۵۰ میلی‌ثانیه باشه.'],
+    ],
+  };
+  const steps = STEPS[dev];
+  const done = s.prefs.guide[dev] ?? [];
+  const toggle = (i) => set((p) => {
+    const cur = p.prefs.guide[dev] ?? [];
+    return { prefs: { ...p.prefs, guide: { ...p.prefs.guide, [dev]: cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i] } } };
+  });
+  const finished = done.length === steps.length;
+  return (
+    <Card className="p-5 lg:col-span-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-[15px] font-black">راهنمای اتصال</h3>
+        <span className="text-xs text-zinc-500">{fa(done.length)} از {fa(steps.length)} قدم</span>
+      </div>
+      <div className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="دستگاه">
+        {DEVICES.map((d) => (
+          <button key={d.id} type="button" role="tab" aria-selected={dev === d.id} onClick={() => setDev(d.id)} className={cx('flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] transition-colors', dev === d.id ? 'bg-white/10 font-bold text-white' : 'text-zinc-400 hover:text-white')}>
+            <d.icon className="size-4" />{d.label}
+          </button>
+        ))}
+      </div>
+      <Progress value={(done.length / steps.length) * 100} tone="bg-ok" className="mt-4" />
+      <ol className="mt-4 space-y-2">
+        {steps.map(([text, extra], i) => {
+          const on = done.includes(i);
+          return (
+            <li key={`${dev}-${i}`} className="flex items-start gap-3 rounded-xl bg-ink p-3">
+              <button
+                type="button" onClick={() => toggle(i)} aria-pressed={on} aria-label={on ? `قدم ${i + 1} انجام شد` : `علامت زدن قدم ${i + 1}`}
+                className={cx('mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-xs transition-colors', on ? 'border-ok bg-ok text-black' : 'border-edge text-zinc-500 hover:border-zinc-400')}
+              >
+                {on ? <Check className="size-3.5" /> : fa(i + 1)}
+              </button>
+              <div className={cx('flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 text-sm leading-7', on && 'text-zinc-500 line-through decoration-zinc-600')}>
+                <span>{text}</span>{extra}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {finished && <p className="mt-3 text-sm text-ok">تمام شد. وضعیت اتصال رو از داشبورد ببین.</p>}
+    </Card>
   );
 }
 
@@ -288,6 +453,8 @@ PersistentKeepalive = 25
           </div>
         </Card>
       </div>
+
+      <SetupGuide onDownload={download} onQr={() => setQr(true)} />
 
       <Modal open={qr} onClose={() => setQr(false)} title="اسکن با اپ WireGuard" icon={QrCode}>
         <QR text={conf} />

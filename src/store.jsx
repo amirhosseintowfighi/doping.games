@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as D from './data.js';
+import { guessCover } from './covers.js';
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
@@ -10,8 +11,20 @@ function loadSite() {
   const base = D.seedSite();
   try {
     const saved = JSON.parse(localStorage.getItem(SITE_KEY) ?? 'null');
-    if (!saved || Object.keys(D.validateSite({ ...base, ...saved })).length) return base;
-    return { ...base, ...saved };
+    if (!saved) return base;
+    const site = D.migrateSite(saved, base, guessCover);
+    return Object.keys(D.validateSite(site)).length ? base : site;
+  } catch {
+    return base;
+  }
+}
+
+/** Per-visitor choices (ISP, favourite servers, last game tested). Kept on this device only. */
+const PREFS_KEY = 'doping.prefs.v1';
+function loadPrefs() {
+  const base = { isp: 'mci', favs: [], game: 'cs2', guide: {} };
+  try {
+    return { ...base, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') };
   } catch {
     return base;
   }
@@ -19,6 +32,9 @@ function loadSite() {
 
 const init = () => ({
   site: loadSite(),
+  prefs: loadPrefs(),
+  rec: null,
+  pingRun: 0,
   users: D.seedUsers(),
   routers: D.seedRouters(),
   servers: D.seedServers(),
@@ -92,6 +108,10 @@ export function StoreProvider({ children }) {
     root.setProperty('--color-brand', s.site.accent);
     root.setProperty('--color-brand2', `color-mix(in srgb, ${s.site.accent} 82%, white)`);
   }, [s.site]);
+
+  useEffect(() => {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(s.prefs)); } catch { /* storage is optional */ }
+  }, [s.prefs]);
 
   const set = useCallback((fn) => setS((prev) => ({ ...prev, ...(typeof fn === 'function' ? fn(prev) : fn) })), []);
 

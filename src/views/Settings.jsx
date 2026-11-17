@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ImagePlus, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { COVERS, coverSrc, fileToCover, guessCover } from '../covers.js';
 import { useStore } from '../store.jsx';
 import { Btn, Card, cx, Field, Mono, Toggle } from '../ui.jsx';
 import { fa, seedSite, uid, validateSite } from '../data.js';
@@ -22,7 +23,7 @@ function setAt(obj, path, value) {
 const getAt = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
 
 const SECTIONS = [
-  ['games', 'بازی‌های تحت پوشش'], ['servers', 'سرورهای بازی'], ['pricing', 'پلن‌ها'], ['faq', 'پرسش‌های پرتکرار'], ['cta', 'بخش پایانی'],
+  ['games', 'بازی‌های تحت پوشش'], ['calculator', 'محاسبه‌گر حجم'], ['servers', 'سرورهای بازی'], ['pricing', 'پلن‌ها'], ['faq', 'پرسش‌های پرتکرار'], ['cta', 'بخش پایانی'],
 ];
 const PLAN = [['ping', 'کاهش پینگ'], ['dns', 'DNS ضد تحریم'], ['pro', 'پکیج پرو']];
 
@@ -151,19 +152,52 @@ export default function Settings() {
       </Block>
 
       <Block
-        title="بازی‌های تحت پوشش" desc="پینگ قبل (اینترنت معمولی) و بعد (با دوپینگ) روی کاور هر بازی نوشته می‌شه."
-        action={<Btn size="sm" variant="ghost" icon={Plus} onClick={() => add('games', { id: uid(), name: '', isp: 120, dp: 30 })}>بازی جدید</Btn>}
+        title="بازی‌های تحت پوشش" desc="کاور، پینگ قبل (اینترنت معمولی) و بعد (با دوپینگ)، و مصرف تقریبی در ساعت برای محاسبه‌گر حجم."
+        action={<Btn size="sm" variant="ghost" icon={Plus} onClick={() => add('games', { id: uid(), name: '', isp: 120, dp: 30, mb: 100, cover: '' })}>بازی جدید</Btn>}
       >
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_auto] gap-2 text-xs text-zinc-500"><span>نام بازی</span><span>قبل (ms)</span><span>بعد (ms)</span><span className="w-[6.5rem]" /></div>
-          {draft.games.map((g, i) => (
-            <div key={g.id} className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_auto] items-start gap-2">
-              {In({ path: `games.${i}.name`, mono: true, placeholder: 'Game name' })}
-              {In({ path: `games.${i}.isp`, mono: true, num: true })}
-              {In({ path: `games.${i}.dp`, mono: true, num: true })}
-              <RowTools list="games" i={i} />
-            </div>
-          ))}
+        <div className="flex flex-col gap-3">
+          {draft.games.map((g, i) => {
+            const src = coverSrc(g.cover);
+            return (
+              <div key={g.id} className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-start gap-3 border-b border-line pb-3 last:border-0 last:pb-0">
+                <div className="relative aspect-[2/3] overflow-hidden rounded-lg border border-line bg-raise">
+                  {src ? <img src={src} alt="" className="size-full object-cover" /> : <span className="grid size-full place-items-center text-[10px] text-zinc-600">بدون کاور</span>}
+                </div>
+                <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_4.5rem]">
+                  <div className="col-span-2 sm:col-span-1">{In({ path: `games.${i}.name`, mono: true, placeholder: 'Game name' })}</div>
+                  <label className="min-w-0"><span className="mb-1 block text-[11px] text-zinc-500">قبل (ms)</span>{In({ path: `games.${i}.isp`, mono: true, num: true })}</label>
+                  <label className="min-w-0"><span className="mb-1 block text-[11px] text-zinc-500">بعد (ms)</span>{In({ path: `games.${i}.dp`, mono: true, num: true })}</label>
+                  <label className="min-w-0"><span className="mb-1 block text-[11px] text-zinc-500">MB/ساعت</span>{In({ path: `games.${i}.mb`, mono: true, num: true })}</label>
+                  <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-4">
+                    <select
+                      id={`set-games-${i}-cover`} aria-label="کاور" className="field w-auto py-1.5 text-xs"
+                      value={g.cover?.startsWith('data:') ? 'upload' : g.cover ?? ''}
+                      onChange={(e) => e.target.value !== 'upload' && up(`games.${i}.cover`, e.target.value)}
+                    >
+                      <option value="">بدون کاور (طرح خطی)</option>
+                      {Object.entries(COVERS).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+                      {g.cover?.startsWith('data:') && <option value="upload">تصویر آپلودشده</option>}
+                    </select>
+                    <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-white/[0.06] px-3 text-xs font-bold hover:bg-white/[0.11]">
+                      <ImagePlus className="size-3.5" /> آپلود کاور
+                      <input
+                        id={`set-games-${i}-file`} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!f) return;
+                          try { up(`games.${i}.cover`, await fileToCover(f)); } catch (x) { toast(x.message, 'bad'); }
+                        }}
+                      />
+                    </label>
+                    {!g.cover && guessCover(g.name) && <Btn size="sm" variant="ghost" onClick={() => up(`games.${i}.cover`, guessCover(g.name))}>کاور {COVERS[guessCover(g.name)].label}</Btn>}
+                    {err(`games.${i}.cover`) && <span className="text-xs text-red-400">{err(`games.${i}.cover`)}</span>}
+                  </div>
+                </div>
+                <RowTools list="games" i={i} />
+              </div>
+            );
+          })}
         </div>
       </Block>
 

@@ -36,11 +36,21 @@ export const EXITS = [
 
 // isp: a typical evening route on a home connection. via: measured-style targets per exit node [ping, loss%, jitter].
 export const GAMES = [
-  { id: 'cs2', name: 'CS2', full: 'Counter-Strike 2', dc: 'Valve Dubai', isp: [145, 8, 24], via: { mct: [28, 0, 2], dxb: [31, 0, 2], fra: [78, 0, 3] } },
-  { id: 'fc26', name: 'FC 26', full: 'EA SPORTS FC 26', dc: 'EA Bahrain', isp: [132, 6, 19], via: { mct: [34, 0, 2], dxb: [29, 0, 2], fra: [74, 0, 3] } },
-  { id: 'val', name: 'Valorant', full: 'VALORANT', dc: 'Riot Bahrain', isp: [118, 5, 17], via: { mct: [32, 0, 2], dxb: [26, 0, 1], fra: [81, 0, 3] } },
-  { id: 'dota', name: 'Dota 2', full: 'Dota 2', dc: 'Valve Dubai', isp: [156, 7, 26], via: { mct: [27, 0, 2], dxb: [30, 0, 2], fra: [76, 0, 3] } },
-  { id: 'wz', name: 'Warzone', full: 'Call of Duty: Warzone', dc: 'Activision ME', isp: [168, 9, 31], via: { mct: [41, 0, 3], dxb: [38, 0, 3], fra: [69, 0, 3] } },
+  { id: 'cs2', cover: 'cs2', name: 'CS2', full: 'Counter-Strike 2', dc: 'Valve Dubai', isp: [145, 8, 24], via: { mct: [28, 0, 2], dxb: [31, 0, 2], fra: [78, 0, 3] } },
+  { id: 'fc26', cover: 'fc26', name: 'FC 26', full: 'EA SPORTS FC 26', dc: 'EA Bahrain', isp: [132, 6, 19], via: { mct: [34, 0, 2], dxb: [29, 0, 2], fra: [74, 0, 3] } },
+  { id: 'val', cover: 'valorant', name: 'Valorant', full: 'VALORANT', dc: 'Riot Bahrain', isp: [118, 5, 17], via: { mct: [32, 0, 2], dxb: [26, 0, 1], fra: [81, 0, 3] } },
+  { id: 'dota', cover: 'dota2', name: 'Dota 2', full: 'Dota 2', dc: 'Valve Dubai', isp: [156, 7, 26], via: { mct: [27, 0, 2], dxb: [30, 0, 2], fra: [76, 0, 3] } },
+  { id: 'wz', cover: 'warzone', name: 'Warzone', full: 'Call of Duty: Warzone', dc: 'Activision ME', isp: [168, 9, 31], via: { mct: [41, 0, 3], dxb: [38, 0, 3], fra: [69, 0, 3] } },
+];
+
+/** Home connections, with how far each one's evening route to the Gulf runs from the average. Estimates. */
+export const ISPS = [
+  { id: 'mci', name: 'همراه اول', k: 1.0, loss: 1 },
+  { id: 'irancell', name: 'ایرانسل', k: 1.08, loss: 2 },
+  { id: 'tci', name: 'مخابرات', k: 0.96, loss: 0 },
+  { id: 'shatel', name: 'شاتل', k: 0.92, loss: 0 },
+  { id: 'asiatech', name: 'آسیاتک', k: 0.9, loss: -1 },
+  { id: 'rightel', name: 'رایتل', k: 1.15, loss: 3 },
 ];
 
 export const CS2_MAPS = ['de_mirage', 'de_dust2', 'de_inferno', 'de_nuke', 'de_ancient', 'de_anubis', 'de_overpass', 'de_train'];
@@ -179,18 +189,21 @@ export const seedSite = () => ({
     { value: '{nodes}', label: 'نود در ایران و خارج' },
     { value: '{online}', label: 'گیمر آنلاین روی سرورها' },
   ],
-  show: { games: true, servers: true, pricing: true, faq: true, cta: true },
+  show: { games: true, calculator: true, servers: true, pricing: true, faq: true, cta: true },
   text: {
     games: { label: 'بازی‌های تحت پوشش', title: 'هر بازی، مسیر خودش.', desc: 'برای هر بازی نزدیک‌ترین خروجی به دیتاسنتر همون بازی انتخاب می‌شه.' },
+    calculator: { label: 'محاسبه‌گر حجم', title: 'چقدر حجم لازم داری؟', desc: 'بازی‌هات و ساعت بازی رو انتخاب کن تا پلن مناسب رو پیشنهاد بدیم.' },
     servers: { label: 'سرورهای بازی دوپینگ', title: 'سرور CS2، داخل ایران.', desc: 'Sub-tick، آنتی‌چیت و پینگ زیر ۱۵ روی نود داخلی. برای اتصال، Steam باید باز باشه.' },
     pricing: { label: 'فروشگاه سرویس‌ها', title: 'پلنت رو انتخاب کن.', desc: 'فعال‌سازی آنی. هر وقت حجم کم آوردی، از پنل ترافیک مازاد بخر.' },
     faq: { label: 'پرسش‌های پرتکرار', title: 'سؤالی داری؟', desc: 'جواب سؤال‌هایی که بیشتر از همه قبل از خرید پرسیده می‌شه.' },
     cta: { label: '', title: 'آماده‌ای؟ بزن بریم.', desc: 'پلن رو بگیر، کانفیگ رو وارد کن و برو توی لابی.' },
   },
+  // mb: typical in-match traffic per hour (estimate), used by the traffic calculator.
   games: [
-    ['Counter-Strike 2', 145, 28], ['VALORANT', 118, 26], ['EA SPORTS FC 26', 132, 29], ['Dota 2', 156, 27], ['Warzone', 168, 38],
-    ['Apex Legends', 141, 36], ['PUBG', 127, 33], ['Fortnite', 152, 58], ['Rust', 96, 16], ['Minecraft', 88, 15],
-  ].map(([name, isp, dp]) => ({ id: uid(), name, isp, dp })),
+    ['Counter-Strike 2', 145, 28, 'cs2', 90], ['VALORANT', 118, 26, 'valorant', 100], ['EA SPORTS FC 26', 132, 29, 'fc26', 80],
+    ['Dota 2', 156, 27, 'dota2', 60], ['Warzone', 168, 38, 'warzone', 200], ['Apex Legends', 141, 36, 'apex', 140],
+    ['PUBG', 127, 33, 'pubg', 130], ['Fortnite', 152, 58, 'fortnite', 120], ['Rust', 96, 16, 'rust', 160], ['Minecraft', 88, 15, 'minecraft', 50],
+  ].map(([name, isp, dp, cover, mb]) => ({ id: uid(), name, isp, dp, cover, mb })),
   faq: [
     ['دوپینگ با فیلترشکن چه فرقی داره؟', 'دوپینگ فقط ترافیک بازی رو از یک مسیر اختصاصی و کوتاه‌تر رد می‌کنه تا پینگ و پکت لاس کم بشه. برای وب‌گردی ساخته نشده و سایت‌های داخلی هم بدون تغییر کار می‌کنن.'],
     ['حجمم تموم بشه چی می‌شه؟', 'اتصال تانل تا خرید حجم متوقف می‌شه. از پنل می‌تونی ترافیک مازاد بخری یا یک‌کلیکی تمدید کنی؛ همون لحظه دوباره وصل می‌شی.'],
@@ -220,6 +233,8 @@ export function validateSite(c) {
     need(`games.${i}.name`, g.name);
     if (!(g.isp > 0 && g.isp < 1000)) e[`games.${i}.isp`] = 'بین ۱ تا ۹۹۹';
     if (!(g.dp > 0 && g.dp < 1000)) e[`games.${i}.dp`] = 'بین ۱ تا ۹۹۹';
+    if (!(g.mb > 0 && g.mb <= 2000)) e[`games.${i}.mb`] = 'بین ۱ تا ۲۰۰۰';
+    if (g.cover && !/^[a-z0-9]{2,16}$/.test(g.cover) && !/^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(g.cover)) e[`games.${i}.cover`] = 'تصویر کاور معتبر نیست.';
   });
   c.faq.forEach((f, i) => { need(`faq.${i}.q`, f.q, 3); need(`faq.${i}.a`, f.a, 3); });
   for (const k of ['primary', 'secondary']) if (!isIPv4(c.dns[k])) e[`dns.${k}`] = 'آی‌پی نسخه ۴ معتبر وارد کن.';
@@ -229,4 +244,22 @@ export function validateSite(c) {
   if (!(+c.wg.mtu >= 1280 && +c.wg.mtu <= 1500)) e['wg.mtu'] = 'بین 1280 تا 1500';
   if (!/^#[0-9a-f]{6}$/i.test(c.accent)) e.accent = 'کد رنگ مثل #E60012';
   return e;
+}
+
+/**
+ * Brings settings saved by an older build up to date: new sections and texts get their defaults,
+ * and games saved before covers existed get a cover guessed from their name.
+ */
+export function migrateSite(saved, base, guess) {
+  const next = { ...base, ...saved };
+  next.show = { ...base.show, ...saved.show };
+  next.text = { ...base.text, ...saved.text };
+  next.hero = { ...base.hero, ...saved.hero };
+  next.games = (saved.games ?? base.games).map((g) => ({ mb: 100, ...g, cover: g.cover ?? guess(g.name) }));
+  return next;
+}
+
+/** Smallest plan that covers the estimate with 20% headroom. */
+export function recommendTier(gbPerMonth) {
+  return [15, 30, 50, 100].find((t) => gbPerMonth * 1.2 <= t) ?? 'inf';
 }
