@@ -64,7 +64,7 @@ function Shell() {
       <footer className="gutter mx-auto mt-24 max-w-6xl border-t border-line py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-zinc-500">
           <DopingLogo className="h-5" />
-          <p>دوپینگ، شبکه گیمینگ ایران · <Mono>doping.games</Mono></p>
+          <p>{s.site.footer} · <Mono>doping.games</Mono></p>
           <p>نسخه نمایشی: داده‌ها در مرورگر شبیه‌سازی می‌شوند و به روتر واقعی وصل نیستند.</p>
         </div>
       </footer>

@@ -165,3 +165,68 @@ export const seedLogs = () => [
   L(900, 'rcon', 'info', 'changelevel de_mirage · Doping Retake #1', 'admin', '10.0.0.2'),
   L(1300, 'auth', 'critical', 'rbac.denied · POST /api/admin/users/…/traffic با نقش USER', 'ShayanRush', '2.181.40.6'),
 ];
+
+/** Everything an admin can change from «تنظیمات سایت». `{nodes}` and `{online}` in a stat value are filled live. */
+export const seedSite = () => ({
+  hero: {
+    line1: 'پینگت رو', accent: 'دوپینگ', line2: 'کن.',
+    desc: 'مسیر اختصاصی از ایران تا سرور بازی، از طریق عمان، امارات و اروپا. پینگ پایین، بدون پکت لاس، بدون تحریم.',
+    cta1: 'خرید سرویس', cta2: 'سرورهای CS2',
+  },
+  stats: [
+    { value: '28ms', label: 'میانگین پینگ CS2' },
+    { value: '0%', label: 'پکت لاس روی تانل' },
+    { value: '{nodes}', label: 'نود در ایران و خارج' },
+    { value: '{online}', label: 'گیمر آنلاین روی سرورها' },
+  ],
+  show: { games: true, servers: true, pricing: true, faq: true, cta: true },
+  text: {
+    games: { label: 'بازی‌های تحت پوشش', title: 'هر بازی، مسیر خودش.', desc: 'برای هر بازی نزدیک‌ترین خروجی به دیتاسنتر همون بازی انتخاب می‌شه.' },
+    servers: { label: 'سرورهای بازی دوپینگ', title: 'سرور CS2، داخل ایران.', desc: 'Sub-tick، آنتی‌چیت و پینگ زیر ۱۵ روی نود داخلی. برای اتصال، Steam باید باز باشه.' },
+    pricing: { label: 'فروشگاه سرویس‌ها', title: 'پلنت رو انتخاب کن.', desc: 'فعال‌سازی آنی. هر وقت حجم کم آوردی، از پنل ترافیک مازاد بخر.' },
+    faq: { label: 'پرسش‌های پرتکرار', title: 'سؤالی داری؟', desc: 'جواب سؤال‌هایی که بیشتر از همه قبل از خرید پرسیده می‌شه.' },
+    cta: { label: '', title: 'آماده‌ای؟ بزن بریم.', desc: 'پلن رو بگیر، کانفیگ رو وارد کن و برو توی لابی.' },
+  },
+  games: [
+    ['Counter-Strike 2', 145, 28], ['VALORANT', 118, 26], ['EA SPORTS FC 26', 132, 29], ['Dota 2', 156, 27], ['Warzone', 168, 38],
+    ['Apex Legends', 141, 36], ['PUBG', 127, 33], ['Fortnite', 152, 58], ['Rust', 96, 16], ['Minecraft', 88, 15],
+  ].map(([name, isp, dp]) => ({ id: uid(), name, isp, dp })),
+  faq: [
+    ['دوپینگ با فیلترشکن چه فرقی داره؟', 'دوپینگ فقط ترافیک بازی رو از یک مسیر اختصاصی و کوتاه‌تر رد می‌کنه تا پینگ و پکت لاس کم بشه. برای وب‌گردی ساخته نشده و سایت‌های داخلی هم بدون تغییر کار می‌کنن.'],
+    ['حجمم تموم بشه چی می‌شه؟', 'اتصال تانل تا خرید حجم متوقف می‌شه. از پنل می‌تونی ترافیک مازاد بخری یا یک‌کلیکی تمدید کنی؛ همون لحظه دوباره وصل می‌شی.'],
+    ['روی کنسول هم کار می‌کنه؟', 'DNS ضد تحریم روی PS5 و Xbox مستقیم تنظیم می‌شه. برای کاهش پینگ روی کنسول، کانفیگ WireGuard رو روی روترت بذار.'],
+    ['آی‌پی اینترنتم عوض بشه DNS قطع می‌شه؟', 'آره، چون DNS فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. توی پنل دکمه «ثبت آی‌پی فعلی من» رو بزن تا دوباره کار کنه.'],
+    ['روی چند دستگاه می‌تونم وصل بشم؟', 'هر اشتراک یک کانفیگ داره. اگه روی دستگاه دیگه‌ای جا مونده، کلید رو از پنل ریست کن.'],
+  ].map(([q, a]) => ({ id: uid(), q, a })),
+  feats: {
+    ping: ['تانل WireGuard اختصاصی', 'خروجی عمان، امارات، اروپا', 'ویندوز، موبایل و روتر'],
+    dns: ['رفع تحریم Steam، Riot، EA', 'ثبت آی‌پی با یک کلیک', 'مناسب کنسول و PC'],
+    pro: ['همه امکانات کاهش پینگ', 'DNS ضد تحریم با ۲ آی‌پی', 'اسلات رزرو و تگ VIP در CS2'],
+  },
+  dns: { ...DNS },
+  wg: { ...WG },
+  accent: '#E60012',
+  footer: 'دوپینگ، شبکه گیمینگ ایران',
+});
+
+/** Validates a site config. Returns { 'path': 'message' }; empty object means valid. */
+export function validateSite(c) {
+  const e = {};
+  const need = (k, v, n = 1) => { if (String(v ?? '').trim().length < n) e[k] = 'این فیلد نباید خالی باشه.'; };
+  need('hero.accent', c.hero.accent); need('hero.cta1', c.hero.cta1); need('hero.cta2', c.hero.cta2);
+  if (!c.hero.line1.trim() && !c.hero.line2.trim() && !c.hero.accent.trim()) e['hero.line1'] = 'تیتر نباید خالی باشه.';
+  c.stats.forEach((x, i) => { need(`stats.${i}.value`, x.value); need(`stats.${i}.label`, x.label); });
+  c.games.forEach((g, i) => {
+    need(`games.${i}.name`, g.name);
+    if (!(g.isp > 0 && g.isp < 1000)) e[`games.${i}.isp`] = 'بین ۱ تا ۹۹۹';
+    if (!(g.dp > 0 && g.dp < 1000)) e[`games.${i}.dp`] = 'بین ۱ تا ۹۹۹';
+  });
+  c.faq.forEach((f, i) => { need(`faq.${i}.q`, f.q, 3); need(`faq.${i}.a`, f.a, 3); });
+  for (const k of ['primary', 'secondary']) if (!isIPv4(c.dns[k])) e[`dns.${k}`] = 'آی‌پی نسخه ۴ معتبر وارد کن.';
+  if (!/^[a-z0-9.-]+:\d{2,5}$/i.test(c.wg.endpoint) || +c.wg.endpoint.split(':')[1] > 65535) e['wg.endpoint'] = 'به شکل host:port وارد کن.';
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(c.wg.serverKey)) e['wg.serverKey'] = 'کلید عمومی WireGuard باید ۴۴ کاراکتر base64 باشه.';
+  if (!/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}(\s*,\s*(\d{1,3}\.){3}\d{1,3}\/\d{1,2})*$/.test(c.wg.allowed)) e['wg.allowed'] = 'مثل 0.0.0.0/0 یا چند CIDR با ویرگول.';
+  if (!(+c.wg.mtu >= 1280 && +c.wg.mtu <= 1500)) e['wg.mtu'] = 'بین 1280 تا 1500';
+  if (!/^#[0-9a-f]{6}$/i.test(c.accent)) e.accent = 'کد رنگ مثل #E60012';
+  return e;
+}

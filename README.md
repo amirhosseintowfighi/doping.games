@@ -10,6 +10,7 @@ npm run dev                 # http://localhost:5173
 npm run build               # production build in dist/
 SINGLE=1 npm run build      # one self-contained dist/index.html
 npm run typecheck:backend   # tsc --strict over backend/
+npm test                    # builds, then runs the browser end-to-end test (needs Playwright + Chromium)
 ```
 
 ## Layout
@@ -22,11 +23,14 @@ npm run typecheck:backend   # tsc --strict over backend/
 | `src/views/Storefront.jsx` | Hero + ping simulator, live game-server hub, plan builder + checkout |
 | `src/views/UserPanel.jsx` | Quota telemetry, WireGuard config/QR/key reset, DNS whitelist, Steam VIP, wallet, tickets |
 | `src/views/Admin.jsx` | Router cluster + sync, users/quota table, game servers + RCON console, pricing/discounts/gateways, audit log |
+| `src/views/Settings.jsx` | Admin → «تنظیمات سایت»: edit hero text, stats, sections, covered games, FAQ, plan features, DNS / WireGuard values, brand colour, footer |
 | `src/views/Blueprint.jsx` | Architecture tab; renders the real files from `backend/` |
 | `src/store.jsx`, `src/data.js` | In-browser simulation layer (seed data, live tick, quota enforcement) |
 | `backend/` | Next.js App Router backend sources: MikroTik REST service, quota worker, AES-256-GCM, rate limit, RBAC/CSRF guard, Zod schemas, idempotent Zarinpal callback, PostgreSQL schema, RouterOS baseline script |
 
 ## What is simulated
+
+Site settings are saved in the browser's `localStorage` (key `doping.site.v1`), so they persist per device, not per account.
 
 The UI runs entirely on the simulation layer in `src/store.jsx`: no router, payment gateway or game server is contacted.
 Public IPs in `src/data.js` are documentation ranges (RFC 5737) and hostnames are placeholders; replace them with real nodes.

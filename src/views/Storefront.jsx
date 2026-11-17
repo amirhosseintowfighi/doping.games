@@ -63,57 +63,56 @@ function LivePing() {
 
 function Hero() {
   const { s } = useStore();
-  const online = s.servers.reduce((a, v) => a + v.players, 0);
+  const h = s.site.hero;
+  const live = { '{nodes}': fa(s.routers.length), '{online}': fa(s.servers.reduce((a, v) => a + v.players, 0)) };
+  const stats = s.site.stats.map((x) => ({ ...x, live: live[x.value.trim()] }));
   return (
     <section className="gutter mx-auto max-w-6xl pt-14 sm:pt-20">
       <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_26rem] lg:gap-16">
         <div className="min-w-0">
-          <div className="inline-flex items-center gap-2 text-xs text-zinc-400"><Dot /> تانل اختصاصی گیمینگ · MikroTik + WireGuard</div>
-          <h1 className="mt-6 text-[2.6rem] leading-[1.25] font-black sm:text-6xl sm:leading-[1.2]">
-            پینگت رو
-            <br />
-            <span className="text-brand2">دوپینگ</span> کن.
+          <h1 className="text-[2.6rem] leading-[1.25] font-black sm:text-6xl sm:leading-[1.2]">
+            {h.line1}
+            {h.line1 && <br />}
+            <span className="text-brand2">{h.accent}</span> {h.line2}
           </h1>
-          <p className="mt-6 max-w-md text-[15px] leading-8 text-zinc-400">
-            مسیر اختصاصی از ایران تا سرور بازی، از طریق عمان، امارات و اروپا. پینگ پایین، بدون پکت لاس، بدون تحریم.
-          </p>
+          {h.desc && <p className="mt-6 max-w-md text-[15px] leading-8 text-zinc-400">{h.desc}</p>}
           <div className="mt-8 flex flex-wrap gap-3">
-            <Btn size="lg" onClick={() => jump('pricing')}>خرید سرویس <ArrowLeft className="size-4" /></Btn>
-            <Btn size="lg" variant="ghost" onClick={() => jump('servers')}>سرورهای CS2</Btn>
+            <Btn size="lg" onClick={() => jump('pricing')}>{h.cta1} <ArrowLeft className="size-4" /></Btn>
+            <Btn size="lg" variant="ghost" onClick={() => jump('servers')}>{h.cta2}</Btn>
           </div>
         </div>
         <LivePing />
       </div>
 
-      <dl className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
-        {[[<Mono key="a">28ms</Mono>, 'میانگین پینگ CS2'], [<Mono key="b">0%</Mono>, 'پکت لاس روی تانل'], [fa(s.routers.length), 'نود در ایران و خارج'], [fa(online), 'گیمر آنلاین روی سرورها']].map(([v, l]) => (
-          <div key={l} className="bg-ink px-6 py-5">
-            <dd className="text-2xl font-black sm:text-3xl">{v}</dd>
-            <dt className="mt-1 text-xs text-zinc-500">{l}</dt>
-          </div>
-        ))}
-      </dl>
+      {stats.length > 0 && (
+        <dl className={cx('mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line', stats.length >= 4 ? 'sm:grid-cols-4' : stats.length === 3 ? 'sm:grid-cols-3' : '')}>
+          {stats.map((x, i) => (
+            <div key={i} className={cx('bg-ink px-6 py-5', stats.length % 2 === 1 && i === stats.length - 1 && 'max-sm:col-span-2')}>
+              <dd className="text-2xl font-black sm:text-3xl">{x.live ?? <Mono>{x.value}</Mono>}</dd>
+              <dt className="mt-1 text-xs text-zinc-500">{x.label}</dt>
+            </div>
+          ))}
+        </dl>
+      )}
     </section>
   );
 }
 
 /* ───────────────────────── Covered games ───────────────────────── */
 
-const COVERED = [
-  ['Counter-Strike 2', 145, 28], ['VALORANT', 118, 26], ['EA SPORTS FC 26', 132, 29], ['Dota 2', 156, 27], ['Warzone', 168, 38],
-  ['Apex Legends', 141, 36], ['PUBG', 127, 33], ['Fortnite', 152, 58], ['Rust', 96, 16], ['Minecraft', 88, 15],
-];
-
 function Games() {
+  const { s } = useStore();
+  const t = s.site.text.games;
+  if (!s.site.games.length) return null;
   return (
     <section className="gutter mx-auto max-w-6xl pt-24">
-      <SectionTitle label="بازی‌های تحت پوشش" title="هر بازی، مسیر خودش." desc="برای هر بازی نزدیک‌ترین خروجی به دیتاسنتر همون بازی انتخاب می‌شه." />
+      <SectionTitle label={t.label} title={t.title} desc={t.desc} />
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {COVERED.map(([name, isp, dp], i) => (
-          <GameCover key={name} name={name} index={i}>
+        {s.site.games.map((g, i) => (
+          <GameCover key={g.id} name={g.name} index={i}>
             <div className="mt-2 flex items-baseline gap-2 text-xs" dir="ltr">
-              <Mono className="text-zinc-600 line-through">{isp}</Mono>
-              <Mono className="font-bold text-ok">{dp}ms</Mono>
+              <Mono className="text-zinc-600 line-through">{g.isp}</Mono>
+              <Mono className="font-bold text-ok">{g.dp}ms</Mono>
             </div>
           </GameCover>
         ))}
@@ -188,9 +187,9 @@ function ServersHub() {
   return (
     <section id="servers" className="gutter mx-auto max-w-6xl scroll-mt-24 pt-24">
       <SectionTitle
-        label="سرورهای بازی دوپینگ"
-        title="سرور CS2، داخل ایران."
-        desc="Sub-tick، آنتی‌چیت و پینگ زیر ۱۵ روی نود داخلی. برای اتصال، Steam باید باز باشه."
+        label={s.site.text.servers.label}
+        title={s.site.text.servers.title}
+        desc={s.site.text.servers.desc}
         action={<span className="flex items-center gap-2 text-xs text-zinc-400"><Dot /> {fa(s.servers.filter((v) => v.status === 'online').length)} سرور آنلاین</span>}
       />
       <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -342,11 +341,6 @@ const KINDS = [
   { id: 'dns', label: 'DNS ضد تحریم' },
   { id: 'pro', label: 'پکیج پرو' },
 ];
-const FEATS = {
-  ping: ['تانل WireGuard اختصاصی', 'خروجی عمان، امارات، اروپا', 'ویندوز، موبایل و روتر'],
-  dns: ['رفع تحریم Steam، Riot، EA', 'ثبت آی‌پی با یک کلیک', 'مناسب کنسول و PC'],
-  pro: ['همه امکانات کاهش پینگ', 'DNS ضد تحریم با ۲ آی‌پی', 'اسلات رزرو و تگ VIP در CS2'],
-};
 const SLOTS = [1, 2, 3, 5];
 
 function Pricing({ go }) {
@@ -361,7 +355,7 @@ function Pricing({ go }) {
 
   return (
     <section id="pricing" className="gutter mx-auto max-w-6xl scroll-mt-24 pt-24">
-      <SectionTitle label="فروشگاه سرویس‌ها" title="پلنت رو انتخاب کن." desc="فعال‌سازی آنی. هر وقت حجم کم آوردی، از پنل ترافیک مازاد بخر." />
+      <SectionTitle label={s.site.text.pricing.label} title={s.site.text.pricing.title} desc={s.site.text.pricing.desc} />
       <div className="mt-8 flex flex-wrap items-center gap-3">
         <Tabs tabs={KINDS} value={kind} onChange={setKind} />
         <Tabs tabs={periods} value={months} onChange={setMonths} />
@@ -386,7 +380,7 @@ function Pricing({ go }) {
               <div className="text-xs text-zinc-600">{months > 1 ? `ماهی ${toman(Math.round(p.total / months / 1000) * 1000)}` : 'ماهانه'}</div>
               <Btn variant={hot ? 'primary' : 'ghost'} className="mt-5 w-full" onClick={() => setOrder({ kind, tier: opt, slots: opt, months, title, ...p })}>فعال‌سازی</Btn>
               <ul className="mt-5 space-y-2 border-t border-line pt-4 text-xs text-zinc-400">
-                {FEATS[kind].map((f) => <li key={f} className="flex items-start gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-zinc-500" />{f}</li>)}
+                {s.site.feats[kind].map((f) => <li key={f} className="flex items-start gap-2"><Check className="mt-0.5 size-3.5 shrink-0 text-zinc-500" />{f}</li>)}
               </ul>
             </Card>
           );
@@ -399,27 +393,22 @@ function Pricing({ go }) {
 
 /* ───────────────────────── FAQ & closing ───────────────────────── */
 
-const FAQ = [
-  ['دوپینگ با فیلترشکن چه فرقی داره؟', 'دوپینگ فقط ترافیک بازی رو از یک مسیر اختصاصی و کوتاه‌تر رد می‌کنه تا پینگ و پکت لاس کم بشه. برای وب‌گردی ساخته نشده و سایت‌های داخلی هم بدون تغییر کار می‌کنن.'],
-  ['حجمم تموم بشه چی می‌شه؟', 'اتصال تانل تا خرید حجم متوقف می‌شه. از پنل می‌تونی ترافیک مازاد بخری یا یک‌کلیکی تمدید کنی؛ همون لحظه دوباره وصل می‌شی.'],
-  ['روی کنسول هم کار می‌کنه؟', 'DNS ضد تحریم روی PS5 و Xbox مستقیم تنظیم می‌شه. برای کاهش پینگ روی کنسول، کانفیگ WireGuard رو روی روترت بذار.'],
-  ['آی‌پی اینترنتم عوض بشه DNS قطع می‌شه؟', 'آره، چون DNS فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. توی پنل دکمه «ثبت آی‌پی فعلی من» رو بزن تا دوباره کار کنه.'],
-  ['روی چند دستگاه می‌تونم وصل بشم؟', 'هر اشتراک یک کانفیگ داره. اگه روی دستگاه دیگه‌ای جا مونده، کلید رو از پنل ریست کن.'],
-];
-
 function Faq() {
+  const { s } = useStore();
   const [open, setOpen] = useState(0);
+  const t = s.site.text.faq;
+  if (!s.site.faq.length) return null;
   return (
     <section className="gutter mx-auto grid max-w-6xl grid-cols-1 gap-8 pt-24 lg:grid-cols-[20rem_1fr] lg:gap-16">
-      <SectionTitle label="پرسش‌های پرتکرار" title="سؤالی داری؟" desc="جواب سؤال‌هایی که بیشتر از همه قبل از خرید پرسیده می‌شه." />
+      <SectionTitle label={t.label} title={t.title} desc={t.desc} />
       <div className="flex flex-col gap-2">
-        {FAQ.map(([q, a], i) => (
-          <Card key={q}>
+        {s.site.faq.map((f, i) => (
+          <Card key={f.id}>
             <button type="button" onClick={() => setOpen(open === i ? -1 : i)} aria-expanded={open === i} className="flex w-full items-center gap-3 px-5 py-4 text-start text-sm font-bold">
-              <span className="flex-1">{q}</span>
+              <span className="flex-1">{f.q}</span>
               <ChevronDown className={cx('size-4 shrink-0 text-zinc-500 transition-transform', open === i && 'rotate-180')} />
             </button>
-            {open === i && <p className="px-5 pb-5 text-sm leading-7 text-zinc-400">{a}</p>}
+            {open === i && <p className="px-5 pb-5 text-sm leading-7 whitespace-pre-line text-zinc-400">{f.a}</p>}
           </Card>
         ))}
       </div>
@@ -428,23 +417,27 @@ function Faq() {
 }
 
 export default function Storefront({ go }) {
+  const { s } = useStore();
+  const { show, text, hero } = s.site;
   return (
     <>
       <Hero />
-      <Games />
-      <ServersHub />
-      <Pricing go={go} />
-      <Faq />
-      <section className="gutter mx-auto max-w-6xl pt-24">
-        <div className="rounded-2xl border border-line bg-card px-6 py-14 text-center">
-          <h2 className="text-2xl font-black sm:text-4xl">آماده‌ای؟ بزن بریم.</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">پلن رو بگیر، کانفیگ رو وارد کن و برو توی لابی.</p>
-          <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <Btn size="lg" onClick={() => jump('pricing')}>خرید سرویس</Btn>
-            <Btn size="lg" variant="ghost" onClick={() => go('panel')}>ورود به پنل</Btn>
+      {show.games && <Games />}
+      {show.servers && <ServersHub />}
+      {show.pricing && <Pricing go={go} />}
+      {show.faq && <Faq />}
+      {show.cta && (
+        <section className="gutter mx-auto max-w-6xl pt-24">
+          <div className="rounded-2xl border border-line bg-card px-6 py-14 text-center">
+            <h2 className="text-2xl font-black sm:text-4xl">{text.cta.title}</h2>
+            {text.cta.desc && <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">{text.cta.desc}</p>}
+            <div className="mt-7 flex flex-wrap justify-center gap-3">
+              {show.pricing && <Btn size="lg" onClick={() => jump('pricing')}>{hero.cta1}</Btn>}
+              <Btn size="lg" variant="ghost" onClick={() => go('panel')}>ورود به پنل</Btn>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </>
   );
 }

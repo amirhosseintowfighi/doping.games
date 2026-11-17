@@ -7,7 +7,7 @@ import {
 import { useStore } from '../store.jsx';
 import { Ring } from '../art.jsx';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
-import { daysLeft, DNS, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, WG, wgKey } from '../data.js';
+import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, wgKey } from '../data.js';
 
 const STATUS = {
   active: ['فعال', 'ok'], quota: ['اتمام حجم', 'bad'], expired: ['منقضی', 'warn'], disabled: ['غیرفعال', 'mute'],
@@ -201,6 +201,7 @@ function Connect() {
   const [reset, setReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const k = s.myKeys;
+  const { dns: DNS, wg: WG } = s.site;
   const conf = `[Interface]
 PrivateKey = ${k.priv}
 Address = ${me.ip}/32
@@ -308,6 +309,7 @@ PersistentKeepalive = 25
 
 function SmartDns() {
   const { s, set, toast, log } = useStore();
+  const DNS = s.site.dns;
   const [detected, setDetected] = useState({ ip: null, real: false });
   const [manual, setManual] = useState('');
   const [err, setErr] = useState('');

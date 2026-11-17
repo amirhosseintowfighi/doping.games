@@ -4,7 +4,21 @@ import * as D from './data.js';
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
+const SITE_KEY = 'doping.site.v1';
+/** Saved settings layered over the defaults, so a newer build with new fields still gets them. */
+function loadSite() {
+  const base = D.seedSite();
+  try {
+    const saved = JSON.parse(localStorage.getItem(SITE_KEY) ?? 'null');
+    if (!saved || Object.keys(D.validateSite({ ...base, ...saved })).length) return base;
+    return { ...base, ...saved };
+  } catch {
+    return base;
+  }
+}
+
 const init = () => ({
+  site: loadSite(),
   users: D.seedUsers(),
   routers: D.seedRouters(),
   servers: D.seedServers(),
@@ -70,6 +84,14 @@ export function StoreProvider({ children }) {
     const t = setInterval(() => setS(simulate), 3000);
     return () => clearInterval(t);
   }, []);
+
+  // Settings survive a reload on this device; the accent colour drives the theme variables.
+  useEffect(() => {
+    try { localStorage.setItem(SITE_KEY, JSON.stringify(s.site)); } catch { /* storage is optional */ }
+    const root = document.documentElement.style;
+    root.setProperty('--color-brand', s.site.accent);
+    root.setProperty('--color-brand2', `color-mix(in srgb, ${s.site.accent} 82%, white)`);
+  }, [s.site]);
 
   const set = useCallback((fn) => setS((prev) => ({ ...prev, ...(typeof fn === 'function' ? fn(prev) : fn) })), []);
 

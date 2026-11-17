@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Activity, BadgePercent, Ban, Banknote, Code2, CreditCard, Crosshair, Gauge, Pause, Pencil, Play, Plus, Power,
-  RefreshCw, RotateCcw, Router, ScrollText, Search, Send, Server, ShieldAlert, Terminal, Trash2, UserX, Users, Waypoints,
+  Activity, BadgePercent, Ban, Banknote, Code2, CreditCard, Crosshair, Pause, Pencil, Play, Plus, Power,
+  RefreshCw, RotateCcw, Router, ScrollText, Search, SlidersHorizontal, Send, Server, ShieldAlert, Terminal, Trash2, UserX, Users,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
+import Settings from './Settings.jsx';
 import { ArcMeter, ModeEmblem, RouteMap } from '../art.jsx';
 import { Badge, Btn, Card, cx, Dot, Drawer, Field, Modal, Mono, Progress, RailLayout, Stat, Toggle } from '../ui.jsx';
 import { clock, CS2_MAPS, daysLeft, fa, GB, gb, isIPv4, MODES, PLAN_NAME, rint, roster, tierLabel, TIERS, toman, uid } from '../data.js';
@@ -718,6 +719,7 @@ export default function Admin() {
     { id: 'servers', label: 'سرورهای بازی و RCON', icon: Crosshair, count: s.servers.length, C: GameServers },
     { id: 'sales', label: 'فروش و درگاه', icon: Banknote, C: Sales },
     { id: 'logs', label: 'لاگ امنیتی و API', icon: ScrollText, C: Logs },
+    { id: 'settings', label: 'تنظیمات سایت', icon: SlidersHorizontal, C: Settings },
   ];
   const Current = TABS.find((t) => t.id === tab).C;
   return (
