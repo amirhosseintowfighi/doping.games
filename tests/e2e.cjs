@@ -43,14 +43,30 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   const covers = await page.evaluate(() => [...document.querySelectorAll('main img')].map((i) => i.complete && i.naturalWidth > 0));
   check('all game covers load', covers.length >= 15 && covers.every(Boolean), `${covers.filter(Boolean).length}/${covers.length}`);
 
+  // hero route scene
+  check('hero scene animates packets on the tunnel', (await page.locator('main svg animateMotion').count()) >= 3);
+  await page.click('g[role=button][aria-label^="خروجی دبی"]');
+  check('clicking an exit in the scene selects it', (await page.getAttribute('g[role=button][aria-label^="خروجی دبی"]', 'aria-pressed')) === 'true');
+  check('scene exit choice reaches the ping test', (await page.inputValue('#ping-exit')) === 'dxb');
+  await page.focus('g[role=button][aria-label^="خروجی مسقط"]');
+  await page.keyboard.press('Enter');
+  check('exits work from the keyboard', (await page.inputValue('#ping-exit')) === 'mct');
+  await page.click('[role=radio][aria-label="مقصد Dota 2"]');
+  check('scene game choice reaches the ping test', (await page.getAttribute('#ping-test [role=radio][aria-label="Dota 2"]', 'aria-checked')) === 'true');
+  check('scene shows the chosen game', (await page.locator('main svg text:has-text("Valve Dubai")').count()) >= 1);
+  await page.click('[role=tab]:has-text("بدون دوپینگ")');
+  check('route switch shows the ordinary route', (await text(page)).includes('٪ پکت لاس'));
+  await page.click('[role=tab]:has-text("با دوپینگ")');
+  check('route switch back shows the exit', (await text(page)).includes('از خروجی مسقط'));
+
   // ping test: pick an ISP and a game, wait for the run to finish, compare
   await page.selectOption('#ping-isp', 'rightel');
-  await page.click('[role=radio][aria-label="VALORANT"]');
+  await page.click('#ping-test [role=radio][aria-label="VALORANT"]');
   check('ping test runs after a change', (await text(page)).includes('در حال تست'));
   await page.waitForSelector('#ping-test button:has-text("تست دوباره"):not([disabled])', { timeout: 8000 });
   const avgs = await page.$$eval('#ping-test dd.text-2xl', (els) => els.map((e) => Number(e.querySelector('.mono').textContent)));
   check('Doping ping is lower than the ISP route', avgs[1] > 0 && avgs[1] < avgs[0], avgs.join(' → '));
-  check('chosen game is marked', (await page.getAttribute('[role=radio][aria-label="VALORANT"]', 'aria-checked')) === 'true');
+  check('chosen game is marked', (await page.getAttribute('#ping-test [role=radio][aria-label="VALORANT"]', 'aria-checked')) === 'true');
 
   // game details
   await page.click('button[aria-label="جزئیات Counter-Strike 2"]');
@@ -58,7 +74,7 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   const box = await page.locator('[role=dialog] > div.glass').boundingBox();
   check('dialog is inside the viewport', box && box.y >= 0 && box.y + box.height <= 900, JSON.stringify(box));
   await page.click('[role=dialog] button:has-text("تست پینگ این بازی")');
-  check('details close and start a test for that game', (await page.locator('[role=dialog]').count()) === 0 && (await page.getAttribute('[role=radio][aria-label="Counter-Strike 2"]', 'aria-checked')) === 'true');
+  check('details close and start a test for that game', (await page.locator('[role=dialog]').count()) === 0 && (await page.getAttribute('#ping-test [role=radio][aria-label="Counter-Strike 2"]', 'aria-checked')) === 'true');
   await page.waitForSelector('#ping-test button:has-text("تست دوباره"):not([disabled])', { timeout: 8000 });
 
   // traffic calculator → recommended plan
@@ -263,6 +279,7 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   await calm.waitForTimeout(250);
   check('reduced motion disables parallax', await calm.evaluate(() => [...document.querySelectorAll('[data-depth]')].every((el) => !el.style.transform)));
   check('reduced motion still shows final numbers', (await text(calm)).includes('28ms'));
+  check('reduced motion stops the packet animation', (await calm.locator('svg animateMotion').count()) === 0);
   await calm.close();
 
   await browser.close();

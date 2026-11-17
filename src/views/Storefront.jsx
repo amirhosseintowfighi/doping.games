@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BadgePercent, Check, ChevronDown, Crown, MessageCircleQuestion, Play, RotateCcw, Search, ShieldCheck, Star, Wallet, X } from 'lucide-react';
-import DopingLogo from '../Logo.jsx';
+import HeroScene from './HeroScene.jsx';
 import { CountUp, useParallax } from '../motion.jsx';
 import { useStore } from '../store.jsx';
 import { GameCover, ModeEmblem } from '../art.jsx';
@@ -168,11 +168,10 @@ function Hero() {
   return (
     <section ref={scene} className="relative isolate overflow-clip">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
-        <div data-depth="0.55" className="absolute top-6 left-[-10%] w-[min(52rem,90vw)] opacity-[0.045]"><DopingLogo variant="mark" className="h-auto w-full" /></div>
         <div data-depth="-0.3" className="absolute top-1/3 right-[-12rem] size-[30rem] rounded-full bg-brand/[0.07] blur-3xl" />
       </div>
     <div className="gutter mx-auto max-w-6xl pt-14 sm:pt-20">
-      <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_24rem] lg:gap-16">
+      <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-12">
         <div className="min-w-0">
           <h1 className="text-[2.6rem] leading-[1.25] font-black sm:text-6xl sm:leading-[1.2]">
             {h.line1}
@@ -184,8 +183,11 @@ function Hero() {
             <Btn size="lg" onClick={() => jump('pricing')}>{h.cta1} <ArrowLeft className="size-4" /></Btn>
             <Btn size="lg" variant="ghost" onClick={() => jump('servers')}>{h.cta2}</Btn>
           </div>
+          <button type="button" onClick={() => jump('ping-test')} className="mt-6 inline-flex items-center gap-2 text-sm text-zinc-400 underline-offset-4 transition-colors hover:text-white hover:underline">
+            <Dot /> پینگ اینترنت خودت رو تست کن
+          </button>
         </div>
-        <PingTest />
+        <HeroScene />
       </div>
 
       {stats.length > 0 && (
@@ -199,6 +201,29 @@ function Hero() {
         </dl>
       )}
     </div>
+    </section>
+  );
+}
+
+/* ───────────────────────── Ping test section ───────────────────────── */
+
+function PingSection() {
+  return (
+    <section className="gutter mx-auto max-w-6xl pt-24">
+      <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_24rem] lg:gap-16">
+        <div className="min-w-0">
+          <SectionTitle label="تست پینگ" title="قبل از خرید، تست کن." desc="بازی، اینترنت و خروجی رو انتخاب کن تا ۲۴ نمونه پینگ از هر دو مسیر بگیریم و کنار هم ببینی." />
+          <dl className="mt-8 grid max-w-md grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+            {[['پینگ', 'میانگین رفت‌وبرگشت تا سرور بازی'], ['پکت لاس', 'بسته‌هایی که هیچ‌وقت نمی‌رسن'], ['جیتر', 'نوسان پینگ بین بسته‌ها']].map(([k, v]) => (
+              <div key={k} className="border-t border-line pt-3">
+                <dt className="font-bold">{k}</dt>
+                <dd className="mt-1 text-xs leading-6 text-zinc-500">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <PingTest />
+      </div>
     </section>
   );
 }
@@ -835,6 +860,7 @@ export default function Storefront({ go }) {
   return (
     <>
       <Hero />
+      <PingSection />
       {show.games && <Games />}
       {show.calculator && show.pricing && <Calculator />}
       {show.servers && <ServersHub />}

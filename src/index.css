@@ -73,6 +73,8 @@ select.field option { background: #101014; }
 }
 .tilt[data-tilt="on"]::after { opacity: 1; }
 
+.no-glare::after { display: none; }
+
 /* Cursor spotlight (driven by useSpotlight): a faint light under the pointer. */
 .spot { isolation: isolate; }
 .spot::before {

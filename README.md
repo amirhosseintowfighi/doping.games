@@ -20,6 +20,7 @@ npm test                    # builds, then runs the browser end-to-end test (nee
 | `src/Logo.jsx` | `<DopingLogo />` inline SVG (full lockup or `variant="mark"`) |
 | `src/art.jsx` | Vector pieces: original `GameCover` artwork, `Ring` quota gauge, `RouteMap` cluster diagram, `ModeEmblem`, `ArcMeter` |
 | `src/index.css`, `src/ui.jsx` | Design system: near-black, flat bordered cards, one accent (crimson) for the primary action only |
+| `src/views/HeroScene.jsx` | Interactive hero route scene (SVG): you → Tehran edge → exit → game server, clickable exits, game picker, ordinary-route comparison with hops and packet loss |
 | `src/views/Storefront.jsx` | Hero + ping simulator, live game-server hub, plan builder + checkout |
 | `src/views/UserPanel.jsx` | Quota telemetry, WireGuard config/QR/key reset, DNS whitelist, Steam VIP, wallet, tickets |
 | `src/views/Admin.jsx` | Router cluster + sync, users/quota table, game servers + RCON console, pricing/discounts/gateways, audit log |
