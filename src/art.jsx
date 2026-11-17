@@ -1,5 +1,6 @@
 // Small vector pieces: original game covers, the quota ring, and the cluster diagram.
 import { Blocks, Bomb, Crosshair, Hammer, Swords, Target } from 'lucide-react';
+import { useTilt } from './motion.jsx';
 
 /* ───────────────────────── Game covers (original artwork, not publisher art) ───────────────────────── */
 
@@ -23,12 +24,14 @@ const PATTERNS = [
  */
 export function GameCover({ name, index = 0, src, children, onClick }) {
   const Tag = onClick ? 'button' : 'div';
+  const tilt = useTilt(10);
   return (
     <Tag
+      ref={tilt}
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       aria-label={onClick ? `جزئیات ${name}` : undefined}
-      className="group relative block aspect-[2/3] w-full overflow-hidden rounded-2xl border border-line bg-card text-start transition duration-300 hover:-translate-y-1 hover:border-zinc-500 focus-visible:-translate-y-1"
+      className="tilt group relative block aspect-[2/3] w-full overflow-hidden rounded-2xl border border-line bg-card text-start hover:border-zinc-500"
     >
       {src ? (
         <img src={src} alt={onClick ? '' : name} loading="lazy" className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105" />

@@ -28,7 +28,7 @@ export function Btn({ variant = 'primary', size = 'md', icon: Icon, children, cl
   );
 }
 
-export const Card = ({ className, red: _red, as: As = 'div', ...p }) => <As {...p} className={cx('glass relative', className)} />;
+export const Card = ({ className, red: _red, as: As = 'div', ...p }) => <As {...p} className={cx('glass spot relative', className)} />;
 
 const TONE = {
   ok: 'bg-emerald-500/10 text-emerald-300', warn: 'bg-amber-500/10 text-amber-300', bad: 'bg-red-500/10 text-red-300',

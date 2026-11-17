@@ -246,6 +246,13 @@ export default function Settings() {
           </Field>
           {In({ path: 'footer', label: 'متن فوتر' })}
         </div>
+              <div className="mt-5 flex items-center justify-between gap-4 rounded-xl bg-ink px-4 py-3">
+          <div>
+            <div className="text-sm font-bold">افکت‌های حرکتی</div>
+            <div className="text-xs text-zinc-500">پارالاکس، کج شدن کاورها زیر موس و شمارش عددها. برای کسانی که «کاهش حرکت» رو در سیستم‌عامل روشن کردن همیشه خاموشه.</div>
+          </div>
+          <Toggle checked={draft.motion !== false} onChange={(v) => up('motion', v)} label="افکت‌های حرکتی" />
+        </div>
       </Block>
 
       {/* save bar */}

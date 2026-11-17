@@ -80,6 +80,54 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   await page.click('#servers [role=tab]:has-text("همه")');
   check('server list has Steam connect links', (await page.locator('a[href^="steam://connect/"]').count()) >= 5);
 
+  // ── Motion ──
+  const depthTransform = () => page.evaluate(() => document.querySelector('#faq [data-depth]')?.style.transform ?? '');
+  await page.evaluate(() => document.getElementById('faq').scrollIntoView({ block: 'end' }));
+  await page.waitForTimeout(150);
+  const t1 = await depthTransform();
+  await page.mouse.wheel(0, 500);
+  await page.waitForTimeout(250);
+  const t2 = await depthTransform();
+  check('FAQ parallax layers move with scroll', t1.startsWith('translate3d') && t1 !== t2, `${t1} → ${t2}`);
+
+  await page.fill('#faq-search', 'کنسول');
+  check('FAQ search filters questions', (await page.locator('#faq button[aria-expanded]').count()) === 1);
+  await page.fill('#faq-search', 'قورباغه');
+  check('FAQ search says when nothing matches', (await text(page)).includes('پرسشی با «قورباغه» پیدا نشد'));
+  await page.fill('#faq-search', '');
+  const q2 = page.locator('#faq button[aria-expanded]').nth(1);
+  await q2.click();
+  check('FAQ question opens', (await q2.getAttribute('aria-expanded')) === 'true');
+  check('closed FAQ answers are inert', (await page.locator('#faq [id^="faq-a-"][inert]').count()) === (await page.locator('#faq [id^="faq-a-"]').count()) - 1);
+
+  const cover = page.locator('button[aria-label="جزئیات Dota 2"]');
+  await cover.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400); // let the parallax settle before aiming the cursor
+  const cb = await cover.boundingBox();
+  await page.mouse.move(cb.x + cb.width * 0.35, cb.y + cb.height * 0.35);
+  await page.mouse.move(cb.x + cb.width * 0.3, cb.y + cb.height * 0.3);
+  const rx = await cover.evaluate((el) => el.style.getPropertyValue('--rx'));
+  check('covers tilt toward the cursor', rx && rx !== '0deg', rx);
+  await page.mouse.move(5, 5);
+
+  await page.evaluate(() => document.getElementById('faq').scrollIntoView());
+  const shown = await page.waitForFunction(() => getComputedStyle(document.querySelector('button[aria-label="برگشت به بالای صفحه"]')).opacity === '1', null, { timeout: 3000 }).then(() => true, () => false);
+  check('back-to-top appears after scrolling', shown);
+  await page.click('button[aria-label="برگشت به بالای صفحه"]');
+  await page.waitForFunction(() => window.scrollY < 50, null, { timeout: 4000 });
+  check('back-to-top scrolls to the top', true);
+  await page.waitForTimeout(1000);
+  check('stats count up to their final values', (await text(page)).includes('28ms') && (await text(page)).includes('0%'));
+
+  await page.keyboard.press('/');
+  check('"/" focuses the server search', await page.evaluate(() => document.activeElement?.id === 'srv-search'));
+  await page.keyboard.press('Escape');
+
+  await page.click('#faq button:has-text("سؤالت اینجا نیست")');
+  await page.waitForTimeout(300);
+  check('FAQ help button opens the support tab', (await page.getAttribute('[role=tab]:has-text("پشتیبانی")', 'aria-selected')) === 'true');
+  await go(page, 'store');
+
   // purchase with a discount code, paid from the wallet
   await page.click('#pricing button:has-text("فعال‌سازی") >> nth=1');
   await page.fill('#co-code', 'doping20');
@@ -158,6 +206,7 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   await page.fill(`#set-faq-${n}-q`, 'پرسش آزمایشی؟');
   await page.fill(`#set-faq-${n}-a`, 'پاسخ آزمایشی.');
   await page.locator('button[role=switch][aria-label="نمایش پلن‌ها"]').click();
+  await page.locator('button[role=switch][aria-label="افکت‌های حرکتی"]').click();
   await page.click('button:has-text("ذخیره")');
   await page.waitForTimeout(300);
   check('settings save succeeds', (await text(page)).includes('تنظیمات ذخیره شد'));
@@ -173,6 +222,10 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   check('new FAQ appears', body.includes('پرسش آزمایشی؟'));
   check('footer changes', body.includes('فوتر آزمایشی'));
   check('pricing section is hidden', (await page.locator('#pricing').count()) === 0);
+  await page.evaluate(() => document.getElementById('faq').scrollIntoView());
+  await page.mouse.wheel(0, 300);
+  await page.waitForTimeout(200);
+  check('motion switch turns parallax off', (await page.evaluate(() => [...document.querySelectorAll('[data-depth]')].every((el) => !el.style.transform))));
   check('servers changed over RCON show the new map', body.includes('de_nuke'));
   const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim());
   check('accent colour is applied', accent.toUpperCase() === '#00A86B', accent);
@@ -200,6 +253,17 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   body = await text(page);
   check('reset restores the default hero', body.includes('دوپینگ') && !body.includes('توربو'));
   check('reset restores the pricing section', (await page.locator('#pricing').count()) === 1);
+
+  // ── Visitors who ask for reduced motion get no parallax ──
+  const calm = await browser.newPage({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' });
+  await calm.goto(URL);
+  await calm.waitForSelector('main');
+  await calm.evaluate(() => document.getElementById('faq').scrollIntoView());
+  await calm.mouse.wheel(0, 400);
+  await calm.waitForTimeout(250);
+  check('reduced motion disables parallax', await calm.evaluate(() => [...document.querySelectorAll('[data-depth]')].every((el) => !el.style.transform)));
+  check('reduced motion still shows final numbers', (await text(calm)).includes('28ms'));
+  await calm.close();
 
   await browser.close();
   console.log(`${passed} passed, ${failures.length} failed`);

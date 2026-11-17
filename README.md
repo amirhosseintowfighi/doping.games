@@ -24,6 +24,7 @@ npm test                    # builds, then runs the browser end-to-end test (nee
 | `src/views/UserPanel.jsx` | Quota telemetry, WireGuard config/QR/key reset, DNS whitelist, Steam VIP, wallet, tickets |
 | `src/views/Admin.jsx` | Router cluster + sync, users/quota table, game servers + RCON console, pricing/discounts/gateways, audit log |
 | `src/covers.js`, `src/assets/covers/` | Official game artwork (400×600 WebP), cover lookup, and the in-browser resize used for uploaded covers |
+| `src/motion.jsx` | Motion layer: scroll / pointer parallax (`data-depth` layers), 3D cover tilt, cursor spotlight on cards, count-up numbers, scroll progress, back-to-top. Off for `prefers-reduced-motion` and when «افکت‌های حرکتی» is off in settings |
 | `src/views/Settings.jsx` | Admin → «تنظیمات سایت»: edit hero text, stats, sections, covered games, FAQ, plan features, DNS / WireGuard values, brand colour, footer |
 | `src/views/Blueprint.jsx` | Architecture tab; renders the real files from `backend/` |
 | `src/store.jsx`, `src/data.js` | In-browser simulation layer (seed data, live tick, quota enforcement) |

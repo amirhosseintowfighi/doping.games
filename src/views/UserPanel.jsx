@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
 import { Ring } from '../art.jsx';
+import { CountUp } from '../motion.jsx';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
 import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, wgKey } from '../data.js';
 
@@ -73,7 +74,7 @@ function Dashboard({ setTab }) {
         <div className="mt-6 grid grid-cols-1 items-center gap-8 sm:grid-cols-[200px_minmax(0,1fr)]">
           <Ring pct={unlimited ? 0 : pct} className="mx-auto w-full max-w-[200px]">
             <div>
-              <Mono className="block text-4xl leading-none font-bold">{unlimited ? '∞' : gb(Math.max(0, me.quota - used))}</Mono>
+              <Mono className="block text-4xl leading-none font-bold">{unlimited ? '∞' : <CountUp value={Math.max(0, me.quota - used) / GB} decimals={2} duration={600} format={(n) => n.toFixed(2)} />}</Mono>
               <Mono className="mt-1.5 block text-xs text-zinc-500">{unlimited ? 'Unlimited' : `GB / ${me.quota / GB} GB`}</Mono>
               <div className="mt-1 text-[11px] text-zinc-500">حجم باقی‌مانده</div>
             </div>
@@ -839,7 +840,9 @@ const TABS = [
 
 export default function UserPanel() {
   const { s, me } = useStore();
-  const [tab, setTab] = useState('dash');
+  const { set } = useStore();
+  const [tab, setTab] = useState(() => s.panelTab ?? 'dash');
+  useEffect(() => { if (s.panelTab) set({ panelTab: null }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const Current = TABS.find((t) => t.id === tab).C;
   return (
     <div className="gutter mx-auto max-w-6xl pt-10">

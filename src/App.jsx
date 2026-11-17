@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import DopingLogo from './Logo.jsx';
 import { StoreProvider, useStore } from './store.jsx';
+import { BackToTop, ScrollProgress, useSpotlight } from './motion.jsx';
 import { cx, Mono } from './ui.jsx';
 import { fa } from './data.js';
 import Storefront from './views/Storefront.jsx';
@@ -20,6 +21,7 @@ const fromHash = () => VIEWS.find((v) => `#${v.id}` === window.location.hash)?.i
 function Shell() {
   const { s } = useStore();
   const [view, setView] = useState(fromHash);
+  useSpotlight();
 
   useEffect(() => {
     const h = () => setView(fromHash());
@@ -55,6 +57,7 @@ function Shell() {
             <span className="font-normal text-zinc-600">{fa(s.wallet)} تومان</span>
           </button>
         </div>
+        <ScrollProgress />
       </header>
 
       <main key={view} className="animate-rise">
@@ -68,6 +71,8 @@ function Shell() {
           <p>نسخه نمایشی: داده‌ها در مرورگر شبیه‌سازی می‌شوند و به روتر واقعی وصل نیستند.</p>
         </div>
       </footer>
+
+      <BackToTop />
 
       <div className="gutter pointer-events-none fixed inset-x-0 bottom-5 z-[70] flex flex-col items-center gap-2" aria-live="polite">
         {s.toasts.map((t) => (

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, BadgePercent, Check, ChevronDown, Crown, Play, RotateCcw, Search, ShieldCheck, Star, Wallet, X } from 'lucide-react';
+import { ArrowLeft, BadgePercent, Check, ChevronDown, Crown, MessageCircleQuestion, Play, RotateCcw, Search, ShieldCheck, Star, Wallet, X } from 'lucide-react';
+import DopingLogo from '../Logo.jsx';
+import { CountUp, useParallax } from '../motion.jsx';
 import { useStore } from '../store.jsx';
 import { GameCover, ModeEmblem } from '../art.jsx';
 import { coverSrc } from '../covers.js';
@@ -147,13 +149,29 @@ function PingTest() {
   );
 }
 
+/** A stat value: live numbers and plain numbers count up; anything else is shown as typed. */
+function StatValue({ raw, live }) {
+  if (live != null) return <CountUp value={live} format={fa} />;
+  const m = /^(\d+(?:\.\d+)?)(.*)$/.exec(raw.trim());
+  if (!m) return <Mono>{raw}</Mono>;
+  const decimals = (m[1].split('.')[1] ?? '').length;
+  return <Mono><CountUp value={Number(m[1])} decimals={decimals} format={(n) => `${n.toFixed(decimals)}${m[2]}`} /></Mono>;
+}
+
 function Hero() {
   const { s } = useStore();
   const h = s.site.hero;
-  const live = { '{nodes}': fa(s.routers.length), '{online}': fa(s.servers.reduce((a, v) => a + v.players, 0)) };
+  const scene = useRef(null);
+  useParallax(scene, { range: 180, mouse: 26 });
+  const live = { '{nodes}': s.routers.length, '{online}': s.servers.reduce((a, v) => a + v.players, 0) };
   const stats = s.site.stats.map((x) => ({ ...x, live: live[x.value.trim()] }));
   return (
-    <section className="gutter mx-auto max-w-6xl pt-14 sm:pt-20">
+    <section ref={scene} className="relative isolate overflow-clip">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+        <div data-depth="0.55" className="absolute top-6 left-[-10%] w-[min(52rem,90vw)] opacity-[0.045]"><DopingLogo variant="mark" className="h-auto w-full" /></div>
+        <div data-depth="-0.3" className="absolute top-1/3 right-[-12rem] size-[30rem] rounded-full bg-brand/[0.07] blur-3xl" />
+      </div>
+    <div className="gutter mx-auto max-w-6xl pt-14 sm:pt-20">
       <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_24rem] lg:gap-16">
         <div className="min-w-0">
           <h1 className="text-[2.6rem] leading-[1.25] font-black sm:text-6xl sm:leading-[1.2]">
@@ -174,12 +192,13 @@ function Hero() {
         <dl className={cx('mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line', stats.length >= 4 ? 'sm:grid-cols-4' : stats.length === 3 ? 'sm:grid-cols-3' : '')}>
           {stats.map((x, i) => (
             <div key={i} className={cx('bg-ink px-6 py-5', stats.length % 2 === 1 && i === stats.length - 1 && 'max-sm:col-span-2')}>
-              <dd className="text-2xl font-black sm:text-3xl">{x.live ?? <Mono>{x.value}</Mono>}</dd>
+              <dd className="text-2xl font-black sm:text-3xl"><StatValue raw={x.value} live={x.live} /></dd>
               <dt className="mt-1 text-xs text-zinc-500">{x.label}</dt>
             </div>
           ))}
         </dl>
       )}
+    </div>
     </section>
   );
 }
@@ -244,22 +263,40 @@ function GameDetails({ g, onClose }) {
   );
 }
 
+/** Grid columns at the current width, so parallax can move whole columns together. */
+function useCols() {
+  const get = () => (typeof window === 'undefined' ? 5 : window.matchMedia('(min-width: 1024px)').matches ? 5 : window.matchMedia('(min-width: 640px)').matches ? 3 : 2);
+  const [cols, setCols] = useState(get);
+  useEffect(() => {
+    const h = () => setCols(get());
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return cols;
+}
+const COL_DEPTH = [0, -0.22, 0.14, -0.3, 0.08];
+
 function Games() {
   const { s } = useStore();
   const [open, setOpen] = useState(null);
+  const scene = useRef(null);
+  const cols = useCols();
+  useParallax(scene, { range: 130, mouse: 0 });
   const t = s.site.text.games;
   if (!s.site.games.length) return null;
   return (
-    <section className="gutter mx-auto max-w-6xl pt-24">
+    <section ref={scene} className="gutter mx-auto max-w-6xl pt-24">
       <SectionTitle label={t.label} title={t.title} desc={t.desc} />
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {s.site.games.map((g, i) => (
-          <GameCover key={g.id} name={g.name} index={i} src={coverSrc(g.cover)} onClick={() => setOpen(g)}>
-            <div className="mt-1.5 flex items-baseline gap-2 text-xs" dir="ltr">
-              <Mono className="text-zinc-400 line-through">{g.isp}</Mono>
-              <Mono className="font-bold text-ok">{g.dp}ms</Mono>
-            </div>
-          </GameCover>
+          <div key={g.id} data-depth={COL_DEPTH[i % cols] ?? 0}>
+            <GameCover name={g.name} index={i} src={coverSrc(g.cover)} onClick={() => setOpen(g)}>
+              <div className="mt-1.5 flex items-baseline gap-2 text-xs" dir="ltr">
+                <Mono className="text-zinc-400 line-through">{g.isp}</Mono>
+                <Mono className="font-bold text-ok">{g.dp}ms</Mono>
+              </div>
+            </GameCover>
+          </div>
         ))}
       </div>
       {open && <GameDetails g={open} onClose={() => setOpen(null)} />}
@@ -321,7 +358,7 @@ function Calculator() {
         <div className="flex flex-col border-t border-line bg-ink p-5 sm:p-6 lg:border-t-0 lg:border-s">
           <div className="text-xs text-zinc-500">مصرف تقریبی در ماه</div>
           <div className="mt-1 flex items-baseline gap-2" aria-live="polite">
-            <Mono className="text-4xl font-black">{chosen.length ? gb.toFixed(1) : '0'}</Mono>
+            <Mono className="text-4xl font-black"><CountUp value={chosen.length ? gb : 0} decimals={1} duration={500} format={(n) => n.toFixed(1)} /></Mono>
             <Mono className="text-sm text-zinc-500">GB</Mono>
           </div>
           <div className="mt-5 rounded-xl border border-line p-4">
@@ -452,6 +489,20 @@ function ServersHub() {
   ];
   const toggleFav = (id) => set((p) => ({ prefs: { ...p.prefs, favs: p.prefs.favs.includes(id) ? p.prefs.favs.filter((x) => x !== id) : [...p.prefs.favs, id] } }));
   useEffect(() => { if (mode === 'fav' && !favs.length) setMode('all'); }, [mode, favs.length]);
+  // "/" jumps to the server search from anywhere on the page.
+  useEffect(() => {
+    const h = (e) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      const el = document.getElementById('srv-search');
+      if (!el) return;
+      e.preventDefault();
+      el.scrollIntoView({ block: 'center' });
+      el.focus();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
 
   return (
     <section id="servers" className="gutter mx-auto max-w-6xl scroll-mt-24 pt-24">
@@ -472,7 +523,8 @@ function ServersHub() {
         </select>
         <div className="relative w-full sm:w-56">
           <Search className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-zinc-600" />
-          <input id="srv-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم سرور یا مپ…" className="field pr-9" />
+          <input id="srv-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم سرور یا مپ…" className="field pr-9 pl-9" />
+          {!q && <kbd className="mono pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 rounded border border-edge px-1.5 text-[11px] text-zinc-500">/</kbd>}
           {q && <button type="button" onClick={() => setQ('')} aria-label="پاک کردن جستجو" className="absolute top-1/2 left-2 grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-500 hover:text-white"><X className="size-3.5" /></button>}
         </div>
       </div>
@@ -656,7 +708,7 @@ function Pricing({ go }) {
               </div>
               <div className="mt-1 text-xl font-black">{name}</div>
               <div className="mt-5 flex items-baseline gap-1.5">
-                <span className="text-3xl font-black">{fa(p.total / 1000)}</span>
+                <CountUp value={p.total / 1000} format={fa} duration={450} className="text-3xl font-black" />
                 <span className="text-xs text-zinc-500">هزار تومان</span>
               </div>
               <div className="text-xs text-zinc-600">{months > 1 ? `ماهی ${toman(Math.round(p.total / months / 1000) * 1000)}` : 'ماهانه'}</div>
@@ -675,24 +727,103 @@ function Pricing({ go }) {
 
 /* ───────────────────────── FAQ & closing ───────────────────────── */
 
-function Faq() {
-  const { s } = useStore();
+const FAN = [
+  { depth: 0.12, rot: -9, cls: 'right-0 top-8 w-[38%]' },
+  { depth: 0.42, rot: 6, cls: 'right-[22%] top-0 w-[36%]' },
+  { depth: 0.26, rot: -3, cls: 'right-[44%] top-12 w-[34%]' },
+  { depth: 0.6, rot: 11, cls: 'right-[63%] top-4 w-[32%]' },
+];
+
+function Faq({ go }) {
+  const { s, set } = useStore();
   const [open, setOpen] = useState(0);
+  const [q, setQ] = useState('');
+  const scene = useRef(null);
+  useParallax(scene, { range: 120, mouse: 22 });
   const t = s.site.text.faq;
+  const term = q.trim();
+  const list = s.site.faq.filter((f) => !term || `${f.q} ${f.a}`.includes(term));
+  const covers = s.site.games.map((g) => coverSrc(g.cover)).filter(Boolean).slice(0, 4);
   if (!s.site.faq.length) return null;
   return (
-    <section className="gutter mx-auto grid max-w-6xl grid-cols-1 gap-8 pt-24 lg:grid-cols-[20rem_1fr] lg:gap-16">
-      <SectionTitle label={t.label} title={t.title} desc={t.desc} />
-      <div className="flex flex-col gap-2">
-        {s.site.faq.map((f, i) => (
-          <Card key={f.id}>
-            <button type="button" onClick={() => setOpen(open === i ? -1 : i)} aria-expanded={open === i} className="flex w-full items-center gap-3 px-5 py-4 text-start text-sm font-bold">
-              <span className="flex-1">{f.q}</span>
-              <ChevronDown className={cx('size-4 shrink-0 text-zinc-500 transition-transform', open === i && 'rotate-180')} />
-            </button>
-            {open === i && <p className="px-5 pb-5 text-sm leading-7 whitespace-pre-line text-zinc-400">{f.a}</p>}
-          </Card>
-        ))}
+    <section ref={scene} id="faq" className="relative isolate overflow-clip pt-24 pb-6">
+      {/* depth layers: a giant question mark and a crimson glow drift at different speeds */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+        <div data-depth="-0.7" className="absolute top-0 left-[3%] text-[clamp(14rem,36vw,32rem)] leading-none font-black text-white/[0.035] select-none">؟</div>
+        <div data-depth="0.4" className="absolute top-[18%] right-[-10rem] size-[22rem] rounded-full bg-brand/[0.07] blur-3xl" />
+      </div>
+
+      <div className="gutter mx-auto grid max-w-6xl grid-cols-1 gap-10 lg:grid-cols-[22rem_1fr] lg:gap-16">
+        <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+          <div className="relative z-10"><SectionTitle label={t.label} title={t.title} desc={t.desc} /></div>
+          {covers.length > 0 && (
+            <div className="relative mt-10 h-44 sm:h-60" aria-hidden="true">
+              {covers.map((src, i) => (
+                <div key={i} data-depth={FAN[i].depth} className={cx('absolute', FAN[i].cls)}>
+                  <img src={src} alt="" loading="lazy" className="aspect-[2/3] w-full rounded-xl border border-line object-cover shadow-2xl shadow-black" style={{ transform: `rotate(${FAN[i].rot}deg)` }} />
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="relative z-10 mt-8">
+            <Search className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-zinc-600" />
+            <input id="faq-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو در پرسش‌ها…" className="field pr-9" />
+          </div>
+          <Btn variant="ghost" icon={MessageCircleQuestion} className="mt-3" onClick={() => { set({ panelTab: 'support' }); go('panel'); }}>
+            سؤالت اینجا نیست؟ تیکت بزن
+          </Btn>
+        </div>
+
+        <div className="flex flex-col gap-2" aria-live="polite">
+          {list.map((f) => {
+            const i = s.site.faq.indexOf(f);
+            const isOpen = open === i;
+            return (
+              <Card key={f.id} className={cx('transition-colors', isOpen && 'border-edge')}>
+                <button
+                  type="button" onClick={() => setOpen(isOpen ? -1 : i)} aria-expanded={isOpen} aria-controls={`faq-a-${f.id}`}
+                  className="flex w-full items-center gap-3 px-5 py-4 text-start text-sm font-bold"
+                >
+                  <span className="flex-1">{f.q}</span>
+                  <span className={cx('grid size-6 shrink-0 place-items-center rounded-full border transition duration-300', isOpen ? 'rotate-180 border-zinc-500 text-white' : 'border-line text-zinc-500')}>
+                    <ChevronDown className="size-3.5" />
+                  </span>
+                </button>
+                <div id={`faq-a-${f.id}`} inert={!isOpen} className={cx('grid transition-[grid-template-rows] duration-300 ease-out', isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                  <div className="overflow-hidden">
+                    <p className="px-5 pb-5 text-sm leading-7 whitespace-pre-line text-zinc-400">{f.a}</p>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+          {!list.length && <Card className="p-8 text-center text-sm text-zinc-500">پرسشی با «{term}» پیدا نشد.</Card>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Closing call to action. The logo's speed bars slide across as it scrolls past. */
+function Closing({ go }) {
+  const { s } = useStore();
+  const { show, text, hero } = s.site;
+  const scene = useRef(null);
+  useParallax(scene, { range: 300, mouse: 12 });
+  return (
+    <section ref={scene} className="gutter mx-auto max-w-6xl pt-24">
+      <div className="relative isolate overflow-hidden rounded-2xl border border-line bg-card px-6 py-16 text-center">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 -z-10 flex w-[62%] flex-col justify-center gap-3" dir="ltr">
+          {[['72%', 0.55], ['48%', 1.15], ['100%', 0.8], ['84%', 1.45]].map(([w, d], i) => (
+            <div key={i} data-depth={d} data-axis="x" className="h-5 rounded-r-full bg-brand/30 sm:h-7" style={{ width: w, marginLeft: '-22%' }} />
+          ))}
+        </div>
+        <h2 className="text-2xl font-black sm:text-4xl">{text.cta.title}</h2>
+        {text.cta.desc && <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">{text.cta.desc}</p>}
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          {show.pricing && <Btn size="lg" onClick={() => jump('pricing')}>{hero.cta1}</Btn>}
+          <Btn size="lg" variant="ghost" onClick={() => go('panel')}>ورود به پنل</Btn>
+        </div>
       </div>
     </section>
   );
@@ -700,7 +831,7 @@ function Faq() {
 
 export default function Storefront({ go }) {
   const { s } = useStore();
-  const { show, text, hero } = s.site;
+  const { show } = s.site;
   return (
     <>
       <Hero />
@@ -708,19 +839,8 @@ export default function Storefront({ go }) {
       {show.calculator && show.pricing && <Calculator />}
       {show.servers && <ServersHub />}
       {show.pricing && <Pricing go={go} />}
-      {show.faq && <Faq />}
-      {show.cta && (
-        <section className="gutter mx-auto max-w-6xl pt-24">
-          <div className="rounded-2xl border border-line bg-card px-6 py-14 text-center">
-            <h2 className="text-2xl font-black sm:text-4xl">{text.cta.title}</h2>
-            {text.cta.desc && <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">{text.cta.desc}</p>}
-            <div className="mt-7 flex flex-wrap justify-center gap-3">
-              {show.pricing && <Btn size="lg" onClick={() => jump('pricing')}>{hero.cta1}</Btn>}
-              <Btn size="lg" variant="ghost" onClick={() => go('panel')}>ورود به پنل</Btn>
-            </div>
-          </div>
-        </section>
-      )}
+      {show.faq && <Faq go={go} />}
+      {show.cta && <Closing go={go} />}
     </>
   );
 }

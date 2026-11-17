@@ -219,6 +219,7 @@ export const seedSite = () => ({
   dns: { ...DNS },
   wg: { ...WG },
   accent: '#E60012',
+  motion: true,
   footer: 'دوپینگ، شبکه گیمینگ ایران',
 });
 
