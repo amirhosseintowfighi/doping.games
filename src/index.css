@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* Layout: one 1152px column on near-black. Flat bordered cards, one accent (crimson) reserved for the
+   primary action and one highlighted word; everything else is white, grey, and space. */
+@theme {
+  --color-ink: #08080a;
+  --color-card: #101014;
+  --color-raise: #16161b;
+  --color-line: #1f1f26;
+  --color-edge: #2a2a33;
+  --color-brand: #e60012;
+  --color-brand2: #ff1e27;
+  --color-silver: #a1a1aa;
+  --color-ok: #10b981;
+  --color-warn: #f59e0b;
+  --font-sans: "Vazirmatn Variable", "Vazirmatn", "IRANSansX", Tahoma, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+  --font-weight-bold: 600;
+  --font-weight-black: 750;
+  --animate-rise: rise 0.25s ease-out both;
+  @keyframes rise { from { opacity: 0.5; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+}
+
+:root { color-scheme: dark; }
+html { background: var(--color-ink); scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--color-ink); color: #f4f4f5; font-family: var(--font-sans);
+  font-size: 15px; line-height: 1.85; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: var(--color-ink); }
+h1, h2, h3 { text-wrap: balance; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 6px; }
+::selection { background: rgb(230 0 18 / 0.5); }
+* { scrollbar-width: thin; scrollbar-color: #2a2a33 transparent; }
+.lucide { stroke-width: 1.75; }
+
+@utility gutter {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+@utility glass { background: var(--color-card); border: 1px solid var(--color-line); border-radius: 16px; }
+/* selected state of an option */
+@utility glass-red { background: rgb(230 0 18 / 0.07); border: 1px solid rgb(230 0 18 / 0.55); border-radius: 12px; }
+@utility well { background: rgb(255 255 255 / 0.035); border: 1px solid transparent; border-radius: 12px; }
+@utility bg-brand-grad { background-color: var(--color-brand); }
+@utility mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+@utility eyebrow { font-size: 12px; color: #71717a; }
+@utility hairline { background: var(--color-line); height: 1px; }
+@utility field {
+  width: 100%; min-width: 0; border-radius: 10px; border: 1px solid var(--color-edge); background: #0b0b0e;
+  padding: 0.55rem 0.8rem; color: #fff; font-size: 0.9rem; transition: border-color 0.15s;
+  &:focus { outline: none; border-color: #71717a; }
+  &::placeholder { color: #52525b; }
+}
+select.field option { background: #101014; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
