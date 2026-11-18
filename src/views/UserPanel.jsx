@@ -8,7 +8,7 @@ import { useStore } from '../store.jsx';
 import { Ring } from '../art.jsx';
 import { CountUp } from '../motion.jsx';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
-import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, wgKey } from '../data.js';
+import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, pingTiers, priceOf, tierLabel, toman, uid, wgKey } from '../data.js';
 
 const STATUS = {
   active: ['فعال', 'ok'], quota: ['اتمام حجم', 'bad'], expired: ['منقضی', 'warn'], disabled: ['غیرفعال', 'mute'],
@@ -58,8 +58,10 @@ function Dashboard({ setTab }) {
   const [st, tone] = STATUS[me.status];
   const exit = EXITS.find((e) => e.id === s.exit);
   const tier = unlimited ? 'inf' : me.quota / GB;
-  const renewPrice = priceOf(s.pricing, { kind: me.plan, tier: s.pricing.ping[tier] ? tier : 15, slots: 1, months: 1 }).total;
-  const extraPrice = pack * s.pricing.extraPerGb;
+  const P = s.site.pricing;
+  const PLAN_NAME = s.site.planNames;
+  const renewPrice = priceOf(P, { kind: me.plan === 'dns' ? 'ping' : me.plan, tier: pingTiers(P).includes(tier) ? tier : pingTiers(P)[0], slots: 1, months: 1 }).total;
+  const extraPrice = pack * P.extraPerGb;
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_290px]">
@@ -155,7 +157,7 @@ function Dashboard({ setTab }) {
           {[5, 10, 20, 50].map((g) => (
             <button key={g} type="button" onClick={() => setPack(g)} aria-pressed={pack === g} className={cx('relative rounded-2xl py-3 text-center transition', pack === g ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               <Mono className="block text-lg font-black">+{g}</Mono>
-              <Mono className="text-[10px] text-silver">GB</Mono>
+              <Mono className="text-[11px] text-silver">GB</Mono>
             </button>
           ))}
         </div>
@@ -192,10 +194,26 @@ function usageDays(seed) {
   });
 }
 
+/** Phones get the last 7 days so each bar is wide enough to tap. */
+function useNarrow(px = 640) {
+  const q = `(max-width: ${px - 1}px)`;
+  const [narrow, setNarrow] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const h = () => setNarrow(m.matches);
+    m.addEventListener('change', h);
+    return () => m.removeEventListener('change', h);
+  }, [q]);
+  return narrow;
+}
+
 function UsageChart() {
   const { me } = useStore();
-  const days = useMemo(() => usageDays(me.id), [me.id]);
+  const narrow = useNarrow();
+  const all = useMemo(() => usageDays(me.id), [me.id]);
+  const days = narrow ? all.slice(-7) : all;
   const [sel, setSel] = useState(days.length - 1);
+  useEffect(() => { setSel(days.length - 1); }, [days.length]);
   const [show, setShow] = useState('both');
   const val = (d) => (show === 'down' ? d.down : show === 'up' ? d.up : d.down + d.up);
   const max = Math.max(...days.map(val)) * 1.1;
@@ -205,12 +223,12 @@ function UsageChart() {
     <Card className="p-6 xl:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-[15px] font-black">مصرف ۱۴ روز اخیر</h3>
+          <h3 className="text-[15px] font-black">مصرف {fa(days.length)} روز اخیر</h3>
           <p className="text-xs text-zinc-500">جمع: <Mono className="text-zinc-300">{total.toFixed(2)} GB</Mono> · میانگین روزانه <Mono className="text-zinc-300">{(total / days.length).toFixed(2)} GB</Mono></p>
         </div>
         <div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs" role="tablist" aria-label="نوع ترافیک">
           {[['both', 'همه'], ['down', 'دانلود'], ['up', 'آپلود']].map(([id, label]) => (
-            <button key={id} type="button" role="tab" aria-selected={show === id} onClick={() => setShow(id)} className={cx('rounded-md px-2.5 py-1 transition-colors', show === id ? 'bg-white/10 font-bold text-white' : 'text-zinc-400 hover:text-white')}>{label}</button>
+            <button key={id} type="button" role="tab" aria-selected={show === id} onClick={() => setShow(id)} className={cx('rounded-md px-3 py-1.5 transition-colors', show === id ? 'bg-white/10 font-bold text-white' : 'text-zinc-400 hover:text-white')}>{label}</button>
           ))}
         </div>
       </div>
@@ -324,7 +342,7 @@ function SetupGuide({ onDownload, onQr }) {
             <li key={`${dev}-${i}`} className="flex items-start gap-3 rounded-xl bg-ink p-3">
               <button
                 type="button" onClick={() => toggle(i)} aria-pressed={on} aria-label={on ? `قدم ${i + 1} انجام شد` : `علامت زدن قدم ${i + 1}`}
-                className={cx('mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-xs transition-colors', on ? 'border-ok bg-ok text-black' : 'border-edge text-zinc-500 hover:border-zinc-400')}
+                className={cx('mt-0.5 grid size-8 shrink-0 place-items-center rounded-full border text-xs transition-colors', on ? 'border-ok bg-ok text-black' : 'border-edge text-zinc-500 hover:border-zinc-400')}
               >
                 {on ? <Check className="size-3.5" /> : fa(i + 1)}
               </button>
@@ -409,7 +427,7 @@ PersistentKeepalive = 25
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <Card className="min-w-0 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2.5 text-[15px] font-black"><KeyRound className="size-4 text-brand2" /> کانفیگ WireGuard</h3>
@@ -435,7 +453,7 @@ PersistentKeepalive = 25
             {[['Endpoint', WG.endpoint], ['AllowedIPs', WG.allowed], ['Public Key', WG.serverKey], ['Address', `${me.ip}/32`]].map(([label, v]) => (
               <div key={label} className="flex items-center gap-2 well py-1 ps-3 pe-1">
                 <div className="min-w-0 flex-1">
-                  <Mono className="block text-[10px] text-zinc-500">{label}</Mono>
+                  <Mono className="block text-[11px] text-zinc-500">{label}</Mono>
                   <Mono className="block truncate text-xs font-bold">{v}</Mono>
                 </div>
                 <CopyBtn text={v} />
@@ -514,7 +532,7 @@ function SmartDns() {
   const already = detected.ip && s.dnsIps.some((x) => x.ip === detected.ip);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card red className="p-5 sm:p-6">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Globe className="size-4 text-brand2" /> ثبت آی‌پی برای DNS</h3>
         <p className="mt-2 text-xs leading-6 text-silver">DNS دوپینگ فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. هر بار آی‌پی اینترنتت عوض شد، همین دکمه رو بزن.</p>
@@ -538,11 +556,11 @@ function SmartDns() {
       <div className="flex min-w-0 flex-col gap-4">
         <Card className="p-5">
           <h3 className="font-black">آدرس‌های DNS</h3>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {[['Primary DNS', DNS.primary], ['Secondary DNS', DNS.secondary]].map(([l, v]) => (
               <div key={l} className="flex items-center gap-2 well py-1.5 ps-3 pe-1.5">
                 <div className="min-w-0 flex-1">
-                  <Mono className="block text-[10px] text-zinc-500">{l}</Mono>
+                  <Mono className="block text-[11px] text-zinc-500">{l}</Mono>
                   <Mono className="block text-base font-black">{v}</Mono>
                 </div>
                 <CopyBtn text={v} />
@@ -600,7 +618,7 @@ function Vip() {
     ['skins', 'اسکین و چاقو (!ws / !knife)', 'انتخاب اسکین دلخواه روی سرورهای دوپینگ.'],
   ];
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card className="p-5 sm:p-6">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Link2 className="size-4 text-brand2" /> اتصال اکانت Steam</h3>
         <p className="mt-2 text-xs leading-6 text-silver">امتیازهای VIP با SteamID64 شناخته می‌شن. آیدی ۱۷ رقمیت رو از پروفایل Steam یا سایت <Mono>steamid.io</Mono> بردار.</p>
@@ -674,7 +692,7 @@ function Billing() {
     }, 1400);
   };
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <Card red className="flex flex-col p-5 sm:p-6">
         <div className="flex items-center gap-2 text-xs text-silver"><Wallet className="size-4" /> موجودی کیف پول</div>
         <div className="mt-2 flex flex-wrap items-baseline gap-2">
@@ -685,8 +703,8 @@ function Billing() {
       </Card>
       <Card className="min-w-0 p-5">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Receipt className="size-4 text-brand2" /> تاریخچه فاکتورها</h3>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
+        <div className="max-md:p-2 mt-3 overflow-x-auto">
+          <table className="rtable w-full md:min-w-[520px] text-sm">
             <thead className="text-xs text-silver">
               <tr className="border-b border-white/8 text-start">
                 {['شماره', 'شرح', 'مبلغ', 'درگاه', 'وضعیت'].map((h) => <th key={h} className="px-2 py-2 text-start font-bold">{h}</th>)}
@@ -695,11 +713,11 @@ function Billing() {
             <tbody>
               {s.invoices.map((i) => (
                 <tr key={i.id + i.at} className="border-b border-white/5">
-                  <td className="px-2 py-2.5"><Mono className="text-xs">{i.id}</Mono></td>
-                  <td className="px-2 py-2.5"><div className="font-bold">{i.title}</div><div className="text-[11px] text-zinc-500">{faDate(i.at)}</div></td>
-                  <td className="px-2 py-2.5 whitespace-nowrap">{toman(i.amount)}</td>
-                  <td className="px-2 py-2.5 text-xs text-silver">{i.gateway}</td>
-                  <td className="px-2 py-2.5"><Badge tone={i.status === 'paid' ? 'ok' : 'bad'}>{i.status === 'paid' ? 'پرداخت شده' : 'ناموفق'}</Badge></td>
+                  <td data-label="شماره" className="px-2 py-2.5"><Mono className="text-xs">{i.id}</Mono></td>
+                  <td data-head="1" className="px-2 py-2.5"><div className="font-bold">{i.title}</div><div className="text-[11px] text-zinc-500">{faDate(i.at)}</div></td>
+                  <td data-label="مبلغ" className="px-2 py-2.5 whitespace-nowrap">{toman(i.amount)}</td>
+                  <td data-label="درگاه" className="px-2 py-2.5 text-xs text-silver">{i.gateway}</td>
+                  <td data-label="وضعیت" className="px-2 py-2.5"><Badge tone={i.status === 'paid' ? 'ok' : 'bad'}>{i.status === 'paid' ? 'پرداخت شده' : 'ناموفق'}</Badge></td>
                 </tr>
               ))}
             </tbody>
@@ -721,7 +739,7 @@ function Billing() {
           <input id="topup-amount" dir="ltr" inputMode="numeric" value={amount || ''} onChange={(e) => setAmount(Number(e.target.value.replace(/\D/g, '')))} className="field mono" />
         </Field>
         <div className="mt-4 text-xs font-bold text-silver">درگاه پرداخت</div>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {gws.map((g) => (
             <button key={g.id} type="button" onClick={() => setGw(g.id)} aria-pressed={gw === g.id} className={cx('relative rounded-2xl p-3 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               <span className="block text-sm font-bold">{g.name}</span>
@@ -762,7 +780,7 @@ function Tickets() {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-2.5 text-[15px] font-black"><LifeBuoy className="size-4 text-brand2" /> تیکت‌های پشتیبانی</h3>

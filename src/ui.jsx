@@ -165,7 +165,7 @@ export function Toggle({ checked, onChange, label }) {
   return (
     <button
       type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} dir="ltr"
-      className={cx('relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-ok' : 'bg-edge')}
+      className={cx("relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200 before:absolute before:-inset-2 before:content-['']", checked ? 'bg-ok' : 'bg-edge')}
     >
       <span className={cx('absolute top-1 size-4 rounded-full bg-white transition-all duration-200', checked ? 'left-5' : 'left-1')} />
     </button>

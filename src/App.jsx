@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck } from 'lucide-react';
+import { CircleAlert, CircleCheck, X } from 'lucide-react';
 import DopingLogo from './Logo.jsx';
 import { StoreProvider, useStore } from './store.jsx';
 import { BackToTop, ScrollProgress, useSpotlight } from './motion.jsx';
@@ -22,6 +22,9 @@ function Shell() {
   const { s } = useStore();
   const [view, setView] = useState(fromHash);
   useSpotlight();
+  const [bannerClosed, setBannerClosed] = useState('');
+  const banner = s.site.banner;
+  const showBanner = banner.on && banner.text.trim() && bannerClosed !== banner.text;
 
   useEffect(() => {
     const h = () => setView(fromHash());
@@ -37,16 +40,24 @@ function Shell() {
 
   return (
     <div className="min-h-screen">
+      {showBanner && (
+        <div className="gutter relative z-40 flex items-center justify-center gap-3 bg-brand py-2 text-center text-[13px] font-bold text-white" role="status">
+          <span className="min-w-0">{banner.text}</span>
+          <button type="button" onClick={() => setBannerClosed(banner.text)} aria-label="بستن اطلاعیه" className="grid size-8 shrink-0 place-items-center rounded-lg hover:bg-black/20">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
       <header className="sticky z-40 border-b border-line bg-ink/85 backdrop-blur-xl" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
         <div className="gutter mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-1 py-3">
-          <button type="button" onClick={() => go('store')} aria-label="دوپینگ · صفحه اصلی" className="shrink-0">
+          <button type="button" onClick={() => go('store')} aria-label="دوپینگ · صفحه اصلی" className="shrink-0 py-2">
             <DopingLogo className="h-6 sm:h-7" />
           </button>
-          <nav className="order-3 flex w-full gap-5 overflow-x-auto lg:order-none lg:w-auto" aria-label="محیط‌های پلتفرم">
+          <nav className="order-3 -mx-2 flex w-[calc(100%+1rem)] overflow-x-auto sm:mx-0 sm:w-full sm:gap-5 lg:order-none lg:w-auto" aria-label="محیط‌های پلتفرم">
             {VIEWS.map((v) => (
               <button
                 key={v.id} type="button" onClick={() => go(v.id)} aria-current={view === v.id ? 'page' : undefined}
-                className={cx('shrink-0 border-b-2 py-1.5 text-[13px] whitespace-nowrap transition-colors', view === v.id ? 'border-white font-bold text-white' : 'border-transparent text-zinc-400 hover:text-white')}
+                className={cx('min-h-10 flex-1 shrink-0 border-b-2 px-2 py-2 text-[13px] whitespace-nowrap transition-colors sm:flex-none sm:px-0', view === v.id ? 'border-white font-bold text-white' : 'border-transparent text-zinc-400 hover:text-white')}
               >
                 <span className="hidden sm:inline">{v.label}</span><span className="sm:hidden">{v.short}</span>
               </button>

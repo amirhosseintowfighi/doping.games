@@ -98,8 +98,8 @@ const text = (page) => page.evaluate(() => document.body.innerText);
 
   // ── Motion ──
   const depthTransform = () => page.evaluate(() => document.querySelector('#faq [data-depth]')?.style.transform ?? '');
-  await page.evaluate(() => document.getElementById('faq').scrollIntoView({ block: 'end' }));
-  await page.waitForTimeout(150);
+  await page.evaluate(() => document.getElementById('faq').scrollIntoView({ block: 'end', behavior: 'instant' }));
+  await page.waitForFunction(() => document.querySelector('#faq [data-depth]')?.style.transform, null, { timeout: 3000 }).catch(() => {});
   const t1 = await depthTransform();
   await page.mouse.wheel(0, 500);
   await page.waitForTimeout(250);
@@ -200,44 +200,106 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   check('RCON refuses commands outside the allow-list', (await text(page)).includes('Unknown command'));
   await page.keyboard.press('Escape');
 
+  // ── Admin: records that survive a reload ──
+  await page.click(tab('سرورهای بازی'));
+  await page.click('main button:has-text("افزودن سرور")');
+  await page.fill('#gs-name', 'Doping Test Server');
+  await page.fill('#gs-host', 'test.doping.games');
+  await page.click('[role=dialog] button:has-text("افزودن سرور")');
+  check('admin can add a game server', (await text(page)).includes('Doping Test Server'));
+  await page.click(tab('فروش و درگاه'));
+  await page.fill('#dc-code', 'PERSIST1');
+  await page.click('button:has-text("ساخت")');
+  check('admin can add a discount code', (await text(page)).includes('PERSIST1'));
+  await page.click('button:has-text("ویرایش قیمت‌ها و پلن‌ها")');
+  check('price shortcut opens the plans settings', (await page.getAttribute('[aria-label="بخش‌های تنظیمات"] [role=tab]:has-text("پلن‌ها و قیمت")', 'aria-selected')) === 'true');
+
   // ── Admin: site settings ──
-  await page.click(tab('تنظیمات سایت'));
+  const sub = (label) => page.click(`[aria-label="بخش‌های تنظیمات"] [role=tab]:has-text("${label}")`);
   check('save is disabled with nothing changed', await page.locator('button:has-text("ذخیره")').isDisabled());
+  await sub('اتصال و DNS');
   await page.fill('#set-dns-primary', '999.1.1.1');
+  await sub('صفحه اصلی');
   await page.click('button:has-text("ذخیره")');
   check('invalid DNS blocks saving', (await text(page)).includes('آی‌پی نسخه ۴ معتبر وارد کن'));
+  check('saving jumps to the sub-tab with the error', (await page.getAttribute('[aria-label="بخش‌های تنظیمات"] [role=tab]:has-text("اتصال و DNS")', 'aria-selected')) === 'true');
   await page.fill('#set-dns-primary', '185.55.226.26');
+  await page.fill('#set-wg-endpoint', 'edge.example.ir:51820');
+
+  await sub('صفحه اصلی');
+  await page.locator('button[role=switch][aria-label="نمایش نوار اطلاعیه"]').click();
+  await page.fill('#set-banner-text', 'اطلاعیه آزمایشی دوپینگ');
   await page.fill('#set-hero-accent', 'توربو');
   await page.fill('#set-hero-desc', 'متن آزمایشی تنظیمات.');
-  await page.fill('#set-wg-endpoint', 'edge.example.ir:51820');
   await page.fill('#set-stats-0-value', '19ms');
+  await page.fill('#set-text-ping-title', 'تیتر آزمایشی تست پینگ');
+  await page.click('button[aria-label="پایین بردن بازی‌های تحت پوشش"]');
+  await page.locator('button[role=switch][aria-label="نمایش بخش پایانی"]').click();
+
+  await sub('بازی‌ها');
   await page.fill('#set-games-0-name', 'Test Game X');
-  await page.fill('#set-footer', 'فوتر آزمایشی');
+  await page.click('button[aria-label="جزئیات بازی VALORANT"]');
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAAPAAHZ0QJNAAAAAElFTkSuQmCC', 'base64');
   await page.setInputFiles('#set-games-1-file', { name: 'cover.png', mimeType: 'image/png', buffer: png });
   await page.waitForFunction(() => document.querySelector('#set-games-1-cover')?.value === 'upload', null, { timeout: 5000 });
-  await page.fill('#set-accent', '#00A86B');
+  await page.click('button:has-text("بازی جدید")');
+  const g = (await page.locator('[id^="set-games-"][id$="-name"]').count()) - 1;
+  await page.fill(`#set-games-${g}-name`, 'Arena Breakout');
+  await page.fill(`#set-games-${g}-dc`, 'Tencent ME');
+  await page.fill(`#set-games-${g}-via-dxb`, '24');
+  await page.locator('button[role=switch][aria-label="تست پینگ Arena Breakout"]').click();
+
+  await sub('پلن‌ها و قیمت');
+  await page.fill('#set-planNames-ping', 'کاهش لگ');
+  await page.fill('#set-pricing-ping-1-price', '125000');
+  await page.click('button:has-text("حجم جدید")');
+  await page.click('button:has-text("مدت جدید")');
+
+  await sub('پرسش‌ها');
   await page.click('button:has-text("پرسش جدید")');
   const n = (await page.locator('[id^="set-faq-"][id$="-q"]').count()) - 1;
   await page.fill(`#set-faq-${n}-q`, 'پرسش آزمایشی؟');
   await page.fill(`#set-faq-${n}-a`, 'پاسخ آزمایشی.');
-  await page.locator('button[role=switch][aria-label="نمایش پلن‌ها"]').click();
+
+  await sub('ظاهر و پشتیبان');
+  await page.fill('#set-footer', 'فوتر آزمایشی');
+  await page.fill('#set-accent', '#00A86B');
   await page.locator('button[role=switch][aria-label="افکت‌های حرکتی"]').click();
+  await page.fill('#set-import', 'this is not json');
+  await page.click('button:has-text("بررسی و وارد کردن")');
+  check('import rejects text that is not JSON', (await text(page)).includes('متن JSON معتبر نیست'));
+  await page.fill('#set-import', '');
+
   await page.click('button:has-text("ذخیره")');
   await page.waitForTimeout(300);
   check('settings save succeeds', (await text(page)).includes('تنظیمات ذخیره شد'));
 
   await go(page, 'store');
   let body = await text(page);
+  check('announcement bar shows', body.includes('اطلاعیه آزمایشی دوپینگ'));
+  await page.click('button[aria-label="بستن اطلاعیه"]');
+  check('announcement bar can be closed', !(await text(page)).includes('اطلاعیه آزمایشی دوپینگ'));
   check('hero accent word changes', body.includes('توربو'));
   check('hero description changes', body.includes('متن آزمایشی تنظیمات.'));
   check('stat value changes', body.includes('19ms'));
+  check('ping section title changes', body.includes('تیتر آزمایشی تست پینگ'));
   check('game name changes', body.includes('Test Game X'));
   const upSrc = await page.locator('button[aria-label^="جزئیات"]').nth(1).locator('img').getAttribute('src');
   check('uploaded cover is shown', (upSrc ?? '').startsWith('data:image/'));
+  check('new game appears in covered games', (await page.locator('button[aria-label="جزئیات Arena Breakout"]').count()) === 1);
+  check('new featured game appears in the hero scene', (await page.locator('[role=radio][aria-label="مقصد Arena Breakout"]').count()) === 1);
+  check('new featured game appears in the ping test', (await page.locator('#ping-test [role=radio][aria-label="Arena Breakout"]').count()) === 1);
+  await page.click('[role=radio][aria-label="مقصد Arena Breakout"]');
+  check('new game uses its own exit pings', (await text(page)).includes('24ms'));
+  const order = await page.$$eval('[data-section]', (els) => els.map((e) => e.dataset.section));
+  check('section order follows settings', order.indexOf('calculator') < order.indexOf('games'), order.join(','));
+  check('hidden section is removed', !order.includes('cta'));
+  check('plan name changes', (await page.locator('#pricing [role=tab]:has-text("کاهش لگ")').count()) === 1);
+  check('tier price changes', (await page.locator('[data-plan="30"]').innerText()).includes('۱۲۵'));
+  check('new tier appears', (await page.locator('[data-plan="150"]').count()) === 1);
+  check('new duration appears', (await page.locator('#pricing [role=tab]:has-text("۹ ماهه")').count()) === 1);
   check('new FAQ appears', body.includes('پرسش آزمایشی؟'));
   check('footer changes', body.includes('فوتر آزمایشی'));
-  check('pricing section is hidden', (await page.locator('#pricing').count()) === 0);
   await page.evaluate(() => document.getElementById('faq').scrollIntoView());
   await page.mouse.wheel(0, 300);
   await page.waitForTimeout(200);
@@ -247,28 +309,34 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   check('accent colour is applied', accent.toUpperCase() === '#00A86B', accent);
 
   await go(page, 'panel');
+  check('panel uses the new plan name', (await text(page)).includes('کاهش لگ'));
   await page.click(tab('مرکز اتصال'));
   check('panel config uses the new endpoint', (await text(page)).includes('edge.example.ir:51820'));
   await page.click(tab('DNS هوشمند'));
   check('panel shows the new DNS', (await text(page)).includes('185.55.226.26'));
 
-  // settings survive a reload
+  // settings and admin records survive a reload
   await page.reload();
   await page.waitForSelector('main');
   await go(page, 'store');
   check('settings persist after reload', (await text(page)).includes('توربو'));
+  check('prices persist after reload', (await page.locator('[data-plan="30"]').innerText()).includes('۱۲۵'));
   check('chosen ISP persists after reload', (await page.inputValue('#ping-isp')) === 'rightel');
   check('favourite server persists after reload', (await page.locator('#servers [role=tab]:has-text("علاقه‌مندی‌ها")').count()) === 1);
+  check('added game server persists after reload', (await text(page)).includes('Doping Test Server'));
+  await go(page, 'admin');
+  await page.click(tab('فروش و درگاه'));
+  check('added discount code persists after reload', (await text(page)).includes('PERSIST1'));
 
   // reset to defaults
-  await go(page, 'admin');
   await page.click(tab('تنظیمات سایت'));
   await page.click('button:has-text("پیش‌فرض")');
   await page.click('button:has-text("ذخیره")');
   await go(page, 'store');
   body = await text(page);
   check('reset restores the default hero', body.includes('دوپینگ') && !body.includes('توربو'));
-  check('reset restores the pricing section', (await page.locator('#pricing').count()) === 1);
+  check('reset restores default prices', (await page.locator('[data-plan="30"]').innerText()).includes('۱۱۹'));
+  check('reset restores the closing section', (await page.locator('[data-section="cta"]').count()) === 1);
 
   // ── Visitors who ask for reduced motion get no parallax ──
   const calm = await browser.newPage({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' });

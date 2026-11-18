@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Gamepad2 } from 'lucide-react';
 import DopingLogo from '../Logo.jsx';
 import { coverSrc } from '../covers.js';
-import { EXITS, fa, GAMES, ISPS } from '../data.js';
+import { EXITS, fa, ISPS, trackedGames } from '../data.js';
 import { useMotion, useTilt } from '../motion.jsx';
 import { useStore } from '../store.jsx';
 import { cx } from '../ui.jsx';
@@ -54,6 +54,7 @@ export default function HeroScene() {
     return () => ro.disconnect();
   }, []);
 
+  const GAMES = trackedGames(s.site);
   const game = GAMES.find((g) => g.id === s.prefs.game) ?? GAMES[0];
   const isp = ISPS.find((i) => i.id === s.prefs.isp) ?? ISPS[0];
   const exit = s.exit;
@@ -206,7 +207,7 @@ export default function HeroScene() {
             </button>
           ))}
         </div>
-        <p className="text-xs text-zinc-500">روی خروجی‌ها بزن تا مسیر عوض بشه.</p>
+        <p className="text-xs text-zinc-500">{s.site.hero.sceneHint}</p>
       </div>
     </div>
   );

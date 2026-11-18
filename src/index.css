@@ -86,3 +86,15 @@ select.field option { background: #101014; }
 
 /* Parallax layers only ever move by transform. */
 [data-depth] { will-change: transform; }
+
+/* Stacked tables: below 768px each row becomes a card, each cell a "label · value" line. */
+@media (max-width: 767px) {
+  .rtable, .rtable > tbody, .rtable > tbody > tr, .rtable > tbody > tr > td { display: block; width: 100%; }
+  .rtable > thead { display: none; }
+  .rtable > tbody > tr { border: 1px solid var(--color-line); border-radius: 12px; margin: 0 0 8px; padding: 6px 2px; background: rgb(255 255 255 / 0.015); }
+  .rtable > tbody > tr > td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 12px !important; white-space: normal; min-width: 0; }
+  .rtable > tbody > tr > td[data-label]::before { content: attr(data-label); font-size: 11px; color: #71717a; flex-shrink: 0; }
+  .rtable > tbody > tr > td[data-head] { justify-content: flex-start; padding-block: 8px !important; }
+  .rtable > tbody > tr > td > * { min-width: 0; max-width: 100%; }
+  .rtable > tbody > tr > td .w-56, .rtable > tbody > tr > td .w-28 { width: 12rem; }
+}

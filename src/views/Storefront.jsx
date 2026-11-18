@@ -6,7 +6,7 @@ import { useStore } from '../store.jsx';
 import { GameCover, ModeEmblem } from '../art.jsx';
 import { coverSrc } from '../covers.js';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, SectionTitle, Tabs } from '../ui.jsx';
-import { EXITS, fa, GAMES, GB, ISPS, MODES, PLAN_NAME, priceOf, recommendTier, tierLabel, TIERS, toman } from '../data.js';
+import { bestPing, dnsSlots, durations, EXITS, fa, GB, ISPS, MODES, pingTiers, priceOf, recommendTier, tierLabel, toman, trackedGames } from '../data.js';
 
 const jump = (id) => document.getElementById(id)?.scrollIntoView();
 const SAMPLES = 24;
@@ -64,6 +64,7 @@ function PingChart({ run, count }) {
 
 function PingTest() {
   const { s, set } = useStore();
+  const GAMES = trackedGames(s.site);
   const game = GAMES.find((g) => g.id === s.prefs.game) ?? GAMES[0];
   const isp = ISPS.find((i) => i.id === s.prefs.isp) ?? ISPS[0];
   const [seed, setSeed] = useState(7);
@@ -183,11 +184,11 @@ function Hero() {
             <Btn size="lg" onClick={() => jump('pricing')}>{h.cta1} <ArrowLeft className="size-4" /></Btn>
             <Btn size="lg" variant="ghost" onClick={() => jump('servers')}>{h.cta2}</Btn>
           </div>
-          <button type="button" onClick={() => jump('ping-test')} className="mt-6 inline-flex items-center gap-2 text-sm text-zinc-400 underline-offset-4 transition-colors hover:text-white hover:underline">
-            <Dot /> پینگ اینترنت خودت رو تست کن
+          <button type="button" onClick={() => jump('ping-test')} className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm text-zinc-400 underline-offset-4 transition-colors hover:text-white hover:underline">
+            <Dot /> {h.pingLink}
           </button>
         </div>
-        <HeroScene />
+        {s.site.show.heroScene && <HeroScene />}
       </div>
 
       {stats.length > 0 && (
@@ -208,21 +209,23 @@ function Hero() {
 /* ───────────────────────── Ping test section ───────────────────────── */
 
 function PingSection() {
+  const { s } = useStore();
+  const t = s.site.text.ping;
   return (
     <section className="gutter mx-auto max-w-6xl pt-24">
       <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_24rem] lg:gap-16">
         <div className="min-w-0">
-          <SectionTitle label="تست پینگ" title="قبل از خرید، تست کن." desc="بازی، اینترنت و خروجی رو انتخاب کن تا ۲۴ نمونه پینگ از هر دو مسیر بگیریم و کنار هم ببینی." />
+          <SectionTitle label={t.label} title={t.title} desc={t.desc} />
           <dl className="mt-8 grid max-w-md grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-            {[['پینگ', 'میانگین رفت‌وبرگشت تا سرور بازی'], ['پکت لاس', 'بسته‌هایی که هیچ‌وقت نمی‌رسن'], ['جیتر', 'نوسان پینگ بین بسته‌ها']].map(([k, v]) => (
-              <div key={k} className="border-t border-line pt-3">
+            {t.items.filter((x) => x.k.trim()).map(({ k, v }, i) => (
+              <div key={i} className="border-t border-line pt-3">
                 <dt className="font-bold">{k}</dt>
                 <dd className="mt-1 text-xs leading-6 text-zinc-500">{v}</dd>
               </div>
             ))}
           </dl>
         </div>
-        <PingTest />
+        <div className="mx-auto w-full max-w-md lg:max-w-none"><PingTest /></div>
       </div>
     </section>
   );
@@ -230,17 +233,10 @@ function PingSection() {
 
 /* ───────────────────────── Covered games ───────────────────────── */
 
-/** Ping per exit node for a game: measured values for the five tracked titles, an estimate for the rest. */
-function exitPings(g) {
-  const tracked = GAMES.find((x) => x.cover && x.cover === g.cover);
-  if (tracked) return EXITS.map((e) => [e, tracked.via[e.id][0]]);
-  return EXITS.map((e, i) => [e, Math.round(g.dp * [1, 1.08, 1.9][i])]);
-}
-
 function GameDetails({ g, onClose }) {
   const { set } = useStore();
-  const tracked = GAMES.find((x) => x.cover && x.cover === g.cover);
-  const rows = exitPings(g);
+  const rows = EXITS.map((e) => [e, g.via[e.id]]);
+  const dp = bestPing(g);
   const max = Math.max(g.isp, ...rows.map(([, v]) => v));
   const best = Math.min(...rows.map(([, v]) => v));
   return (
@@ -252,10 +248,10 @@ function GameDetails({ g, onClose }) {
         <div className="min-w-0">
           <div className="flex items-baseline gap-3" dir="ltr">
             <Mono className="text-xl text-zinc-600 line-through">{g.isp}</Mono>
-            <Mono className="text-4xl font-black text-ok">{g.dp}</Mono>
+            <Mono className="text-4xl font-black text-ok">{dp}</Mono>
             <Mono className="text-sm text-zinc-500">ms</Mono>
           </div>
-          <p className="mt-1 text-sm text-zinc-400">{fa(Math.round((1 - g.dp / g.isp) * 100))}٪ پینگ کمتر از اینترنت معمولی</p>
+          <p className="mt-1 text-sm text-zinc-400">{fa(Math.max(0, Math.round((1 - dp / g.isp) * 100)))}٪ پینگ کمتر از اینترنت معمولی</p>
 
           <div className="mt-6 text-xs text-zinc-500">پینگ از هر خروجی</div>
           <ul className="mt-2 space-y-2.5">
@@ -275,8 +271,8 @@ function GameDetails({ g, onClose }) {
           <p className="mt-5 text-xs text-zinc-500">مصرف تقریبی هنگام بازی: <Mono className="text-zinc-300">{g.mb} MB</Mono> در ساعت</p>
 
           <div className="mt-6 flex flex-wrap gap-2">
-            {tracked && (
-              <Btn onClick={() => { set((p) => ({ prefs: { ...p.prefs, game: tracked.id }, pingRun: p.pingRun + 1 })); onClose(); jump('ping-test'); }}>
+            {g.featured && (
+              <Btn onClick={() => { set((p) => ({ prefs: { ...p.prefs, game: g.id }, pingRun: p.pingRun + 1 })); onClose(); jump('ping-test'); }}>
                 تست پینگ این بازی
               </Btn>
             )}
@@ -318,7 +314,7 @@ function Games() {
             <GameCover name={g.name} index={i} src={coverSrc(g.cover)} onClick={() => setOpen(g)}>
               <div className="mt-1.5 flex items-baseline gap-2 text-xs" dir="ltr">
                 <Mono className="text-zinc-400 line-through">{g.isp}</Mono>
-                <Mono className="font-bold text-ok">{g.dp}ms</Mono>
+                <Mono className="font-bold text-ok">{bestPing(g)}ms</Mono>
               </div>
             </GameCover>
           </div>
@@ -342,8 +338,8 @@ function Calculator() {
   // Play time is split evenly across the chosen games.
   const mbPerHour = chosen.length ? chosen.reduce((a, g) => a + g.mb, 0) / chosen.length : 0;
   const gb = (mbPerHour * hours * days * 4.3) / 1024;
-  const tier = recommendTier(gb);
-  const price = priceOf(s.pricing, { kind: 'ping', tier, slots: 1, months: 1 }).total;
+  const tier = recommendTier(gb, s.site.pricing);
+  const price = priceOf(s.site.pricing, { kind: 'ping', tier, slots: 1, months: 1 }).total;
   const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   if (!games.length) return null;
@@ -388,7 +384,7 @@ function Calculator() {
           </div>
           <div className="mt-5 rounded-xl border border-line p-4">
             <div className="text-xs text-zinc-500">پلن پیشنهادی</div>
-            <div className="mt-1 text-lg font-black">کاهش پینگ · {tierLabel(tier)}</div>
+            <div className="mt-1 text-lg font-black">{s.site.planNames.ping} · {tierLabel(tier)}</div>
             <div className="text-xs text-zinc-500">ماهانه {toman(price)}</div>
           </div>
           <Btn className="mt-4 w-full" disabled={!chosen.length} onClick={() => { set({ rec: { tier, at: Date.now() } }); jump('pricing'); }}>
@@ -655,7 +651,7 @@ function Checkout({ order, onClose, go }) {
             <Btn variant="ghost" icon={BadgePercent} onClick={applyCode} className={codeErr ? 'mb-6' : ''}>اعمال</Btn>
           </div>
           <div className="mt-4 text-xs font-bold text-silver">روش پرداخت</div>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {[{ id: 'wallet', name: 'کیف پول', kind: `موجودی ${toman(s.wallet)}` }, ...gateways].map((g) => (
               <button
                 key={g.id}
@@ -691,40 +687,39 @@ function Checkout({ order, onClose, go }) {
 }
 
 
-const KINDS = [
-  { id: 'ping', label: 'کاهش پینگ' },
-  { id: 'dns', label: 'DNS ضد تحریم' },
-  { id: 'pro', label: 'پکیج پرو' },
-];
-const SLOTS = [1, 2, 3, 5];
-
 function Pricing({ go }) {
   const { s } = useStore();
-  const [kind, setKind] = useState('ping');
-  const [months, setMonths] = useState(1);
+  const P = s.site.pricing;
+  const names = s.site.planNames;
+  const kinds = ['ping', 'dns', 'pro'].filter((k) => s.site.kinds[k]).map((k) => ({ id: k, label: names[k] }));
+  const [kindPick, setKind] = useState(kinds[0]?.id ?? 'ping');
+  const kind = kinds.some((k) => k.id === kindPick) ? kindPick : kinds[0]?.id ?? 'ping';
+  const periods = durations(P).map((d) => ({ id: d.months, label: `${fa(d.months)} ماهه`, note: d.off ? `${fa(d.off)}٪ تخفیف` : null }));
+  const [monthsPick, setMonths] = useState(periods[0]?.id ?? 1);
+  const months = periods.some((x) => x.id === monthsPick) ? monthsPick : periods[0]?.id ?? 1;
   const [order, setOrder] = useState(null);
   const isDns = kind === 'dns';
-  const options = isDns ? SLOTS : TIERS;
+  const options = isDns ? dnsSlots(P) : pingTiers(P);
   const rec = !isDns ? s.rec?.tier : null;
-  const popular = isDns ? 2 : 30;
-  const periods = [1, 3, 6].map((m) => ({ id: m, label: `${fa(m)} ماهه`, note: s.pricing.dur[m] ? `${fa(s.pricing.dur[m])}٪ تخفیف` : null }));
+  const popular = isDns ? P.popular?.dns : P.popular?.ping === null ? 'inf' : P.popular?.ping;
   // A recommendation from the calculator switches back to a traffic plan.
-  useEffect(() => { if (s.rec && kind === 'dns') setKind('ping'); }, [s.rec?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (s.rec && kind === 'dns') setKind(kinds.find((k) => k.id !== 'dns')?.id ?? 'ping'); }, [s.rec?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!kinds.length) return null;
 
   return (
     <section id="pricing" className="gutter mx-auto max-w-6xl scroll-mt-24 pt-24">
       <SectionTitle label={s.site.text.pricing.label} title={s.site.text.pricing.title} desc={s.site.text.pricing.desc} />
       <div className="mt-8 flex flex-wrap items-center gap-3">
-        <Tabs tabs={KINDS} value={kind} onChange={setKind} />
-        <Tabs tabs={periods} value={months} onChange={setMonths} />
+        {kinds.length > 1 && <Tabs tabs={kinds} value={kind} onChange={setKind} />}
+        {periods.length > 1 && <Tabs tabs={periods} value={months} onChange={setMonths} />}
       </div>
-      <div className={cx('mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2', isDns ? 'lg:grid-cols-4' : 'lg:grid-cols-5')}>
+      <div className={cx('mt-4 grid grid-cols-1 gap-3 min-[480px]:grid-cols-2', options.length >= 5 ? 'lg:grid-cols-5' : options.length === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
         {options.map((opt) => {
-          const p = priceOf(s.pricing, { kind, tier: isDns ? 15 : opt, slots: isDns ? opt : 1, months });
+          const p = priceOf(P, { kind, tier: isDns ? null : opt, slots: isDns ? opt : 1, months });
           const mine = rec != null && opt === rec;
           const hot = rec == null && opt === popular;
           const name = isDns ? `${fa(opt)} آی‌پی` : tierLabel(opt);
-          const title = isDns ? `DNS ضد تحریم · ${fa(opt)} آی‌پی · ${fa(months)} ماهه` : `${PLAN_NAME[kind]} · ${tierLabel(opt)} · ${fa(months)} ماهه`;
+          const title = `${names[kind]} · ${name} · ${fa(months)} ماهه`;
           return (
             <Card key={opt} data-plan={opt} className={cx('flex flex-col p-5 transition-colors', (hot || mine) && 'border-zinc-500', mine && 'ring-2 ring-ok/60')}>
               <div className="flex items-center justify-between gap-2">
@@ -856,17 +851,21 @@ function Closing({ go }) {
 
 export default function Storefront({ go }) {
   const { s } = useStore();
-  const { show } = s.site;
+  const { show, order } = s.site;
+  // Sections render in the order chosen in Admin → «تنظیمات سایت».
+  const SECTIONS = {
+    ping: () => <PingSection />,
+    games: () => <Games />,
+    calculator: () => show.pricing && <Calculator />,
+    servers: () => <ServersHub />,
+    pricing: () => <Pricing go={go} />,
+    faq: () => <Faq go={go} />,
+    cta: () => <Closing go={go} />,
+  };
   return (
     <>
       <Hero />
-      <PingSection />
-      {show.games && <Games />}
-      {show.calculator && show.pricing && <Calculator />}
-      {show.servers && <ServersHub />}
-      {show.pricing && <Pricing go={go} />}
-      {show.faq && <Faq go={go} />}
-      {show.cta && <Closing go={go} />}
+      {order.map((k) => show[k] !== false && SECTIONS[k] && <div key={k} data-section={k}>{SECTIONS[k]()}</div>)}
     </>
   );
 }
