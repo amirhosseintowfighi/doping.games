@@ -22,7 +22,14 @@ const tasks = new Set();
 const pointer = { x: 0, y: 0 };
 let raf = 0;
 let installed = false;
-const run = () => { raf = 0; tasks.forEach((t) => t()); };
+// Two phases per frame: every task measures first and returns a writer; writers run after all reads,
+// so DOM reads and style writes never interleave (no forced reflow).
+const run = () => {
+  raf = 0;
+  const writes = [];
+  tasks.forEach((t) => { const w = t(); if (typeof w === 'function') writes.push(w); });
+  writes.forEach((w) => w());
+};
 const schedule = () => { if (!raf) raf = requestAnimationFrame(run); };
 function install() {
   if (installed) return;
@@ -68,7 +75,8 @@ export function useParallax(ref, { range = 120, mouse = 16 } = {}) {
     const p = Math.max(-1.2, Math.min(1.2, (vh / 2 - (r.top + r.height / 2)) / (vh / 2 + r.height / 2)));
     const mx = finePointer() ? pointer.x : 0;
     const my = finePointer() ? pointer.y : 0;
-    el.querySelectorAll('[data-depth]').forEach((layer) => {
+    const layers = el.querySelectorAll('[data-depth]');
+    return () => layers.forEach((layer) => {
       const d = parseFloat(layer.dataset.depth) || 0;
       const sideways = layer.dataset.axis === 'x';
       const tx = (sideways ? p * range * d : 0) + mx * mouse * d;
@@ -89,7 +97,8 @@ export function ScrollProgress() {
   const bar = useRef(null);
   useFrame(() => {
     const max = document.documentElement.scrollHeight - window.innerHeight;
-    if (bar.current) bar.current.style.transform = `scaleX(${max > 0 ? Math.min(1, window.scrollY / max) : 0})`;
+    const k = max > 0 ? Math.min(1, window.scrollY / max) : 0;
+    return () => { if (bar.current) bar.current.style.transform = `scaleX(${k})`; };
   }, true);
   return <div ref={bar} className="pointer-events-none absolute inset-x-0 bottom-0 h-px origin-right scale-x-0 bg-brand" aria-hidden="true" />;
 }

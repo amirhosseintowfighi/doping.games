@@ -22,7 +22,7 @@ const PATTERNS = [
  * Game cover card. With `src` it shows the game's artwork; without one it draws a quiet line pattern.
  * With `onClick` the whole card is a button.
  */
-export function GameCover({ name, index = 0, src, children, onClick }) {
+export function GameCover({ name, index = 0, src, srcSet, sizes = '(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw', children, onClick }) {
   const Tag = onClick ? 'button' : 'div';
   const tilt = useTilt(10);
   return (
@@ -30,17 +30,17 @@ export function GameCover({ name, index = 0, src, children, onClick }) {
       ref={tilt}
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      aria-label={onClick ? `جزئیات ${name}` : undefined}
+      data-game={name}
       className="tilt group relative block aspect-[2/3] w-full overflow-hidden rounded-2xl border border-line bg-card text-start hover:border-zinc-500"
     >
       {src ? (
-        <img src={src} alt={onClick ? '' : name} loading="lazy" className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105" />
+        <img src={src} srcSet={srcSet} sizes={srcSet ? sizes : undefined} alt={onClick ? '' : name} loading="lazy" className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105" />
       ) : (
         <svg viewBox="0 0 120 100" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full" aria-hidden="true">
           {PATTERNS[index % PATTERNS.length]}
         </svg>
       )}
-      {(children || !src) && (
+      {(children || !src || onClick) && (
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-12">
           <div className="mono truncate text-sm leading-tight font-bold text-white" dir="ltr">{name}</div>
           {children}

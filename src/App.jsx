@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { CircleAlert, CircleCheck, X } from 'lucide-react';
 import DopingLogo from './Logo.jsx';
 import { StoreProvider, useStore } from './store.jsx';
@@ -6,9 +6,10 @@ import { BackToTop, ScrollProgress, useSpotlight } from './motion.jsx';
 import { cx, Mono } from './ui.jsx';
 import { fa } from './data.js';
 import Storefront from './views/Storefront.jsx';
-import UserPanel from './views/UserPanel.jsx';
-import Admin from './views/Admin.jsx';
-import Blueprint from './views/Blueprint.jsx';
+// The storefront ships in the first bundle; the other views load when first opened.
+const UserPanel = lazy(() => import('./views/UserPanel.jsx'));
+const Admin = lazy(() => import('./views/Admin.jsx'));
+const Blueprint = lazy(() => import('./views/Blueprint.jsx'));
 
 const VIEWS = [
   { id: 'store', label: 'فروشگاه و سرورها', short: 'فروشگاه', C: Storefront },
@@ -72,7 +73,9 @@ function Shell() {
       </header>
 
       <main key={view} className="animate-rise">
-        <Current go={go} />
+        <Suspense fallback={<div className="gutter mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center text-sm text-zinc-500" role="status">در حال بارگذاری…</div>}>
+          <Current go={go} />
+        </Suspense>
       </main>
 
       <footer className="gutter mx-auto mt-24 max-w-6xl border-t border-line py-8">

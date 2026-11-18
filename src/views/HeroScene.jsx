@@ -4,7 +4,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Gamepad2 } from 'lucide-react';
 import DopingLogo from '../Logo.jsx';
-import { coverSrc } from '../covers.js';
+import { coverThumb } from '../covers.js';
 import { EXITS, fa, ISPS, trackedGames } from '../data.js';
 import { useMotion, useTilt } from '../motion.jsx';
 import { useStore } from '../store.jsx';
@@ -171,7 +171,7 @@ export default function HeroScene() {
             const name = EXITS.find((v) => v.id === e).name;
             return (
               <g
-                key={e} role="button" tabIndex={0} aria-pressed={on} aria-label={`خروجی ${name}، ${ping(e)} میلی‌ثانیه`}
+                key={e} role="button" tabIndex={0} aria-pressed={on} aria-label={`${name}${e === best ? ' ★' : ''} ${ping(e)}ms · خروجی`}
                 onClick={() => pick(e)} onKeyDown={(k) => (k.key === 'Enter' || k.key === ' ') && (k.preventDefault(), pick(e))}
                 onMouseEnter={() => setHover(e)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(e)} onBlur={() => setHover(null)}
                 className="cursor-pointer outline-none [&:focus-visible>circle:first-child]:stroke-white"
@@ -188,7 +188,7 @@ export default function HeroScene() {
           {/* the game's servers, shown as its cover */}
           <g>
             <rect x={DC[0] - 32} y={DC[1] - 47} width="64" height="94" rx="12" fill="#101014" stroke="#3f3f46" strokeWidth="1.5" />
-            <image href={coverSrc(game.cover)} x={DC[0] - 30} y={DC[1] - 45} width="60" height="90" preserveAspectRatio="xMidYMid slice" clipPath="url(#hero-cover)" />
+            <image href={coverThumb(game.cover)} x={DC[0] - 30} y={DC[1] - 45} width="60" height="90" preserveAspectRatio="xMidYMid slice" clipPath="url(#hero-cover)" />
             <text x={DC[0]} y={DC[1] - 49 - 23 * k} textAnchor="middle" fontSize={14 * k} fontWeight="700" fill="#fff" style={mono}>{game.name}</text>
             <text x={DC[0]} y={DC[1] - 49 - 7 * k} textAnchor="middle" fontSize={11 * k} fill="#71717a" style={mono}>{game.dc}</text>
           </g>
@@ -203,7 +203,7 @@ export default function HeroScene() {
               onClick={() => set((p) => ({ prefs: { ...p.prefs, game: g.id } }))}
               className={cx('h-12 w-8 overflow-hidden rounded-md border-2 transition', g.id === game.id ? 'border-white' : 'border-transparent opacity-45 hover:opacity-90')}
             >
-              <img src={coverSrc(g.cover)} alt="" className="size-full object-cover" />
+              <img src={coverThumb(g.cover)} alt="" className="size-full object-cover" />
             </button>
           ))}
         </div>

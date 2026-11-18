@@ -13,6 +13,9 @@
   --color-silver: #a1a1aa;
   --color-ok: #10b981;
   --color-warn: #f59e0b;
+  /* Greys tuned for WCAG AA (≥ 4.5:1) as small text on both the page and card backgrounds. */
+  --color-zinc-500: #8f8f99;
+  --color-zinc-600: #7c7c86;
   --font-sans: "Vazirmatn Variable", "Vazirmatn", "IRANSansX", Tahoma, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
   --font-weight-bold: 600;

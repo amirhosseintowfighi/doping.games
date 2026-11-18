@@ -1,0 +1,6 @@
+# Doping (doping.games)
+
+> Iranian gaming network: a dedicated low-ping tunnel (MikroTik RouterOS v7 + WireGuard) from Iran to exit nodes in Oman, the UAE and Europe, an anti-sanction gaming DNS with IP whitelisting, and Doping-hosted CS2 servers inside Iran.
+
+- Plans: traffic-based or unlimited ping reduction, anti-sanction DNS by number of IPs, and a Pro bundle.
+- Site language: Persian (fa-IR, right-to-left).

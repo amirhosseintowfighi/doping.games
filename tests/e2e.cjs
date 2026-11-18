@@ -45,10 +45,10 @@ const text = (page) => page.evaluate(() => document.body.innerText);
 
   // hero route scene
   check('hero scene animates packets on the tunnel', (await page.locator('main svg animateMotion').count()) >= 3);
-  await page.click('g[role=button][aria-label^="خروجی دبی"]');
-  check('clicking an exit in the scene selects it', (await page.getAttribute('g[role=button][aria-label^="خروجی دبی"]', 'aria-pressed')) === 'true');
+  await page.click('g[role=button][aria-label^="دبی"]');
+  check('clicking an exit in the scene selects it', (await page.getAttribute('g[role=button][aria-label^="دبی"]', 'aria-pressed')) === 'true');
   check('scene exit choice reaches the ping test', (await page.inputValue('#ping-exit')) === 'dxb');
-  await page.focus('g[role=button][aria-label^="خروجی مسقط"]');
+  await page.focus('g[role=button][aria-label^="مسقط"]');
   await page.keyboard.press('Enter');
   check('exits work from the keyboard', (await page.inputValue('#ping-exit')) === 'mct');
   await page.click('[role=radio][aria-label="مقصد Dota 2"]');
@@ -69,7 +69,7 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   check('chosen game is marked', (await page.getAttribute('#ping-test [role=radio][aria-label="VALORANT"]', 'aria-checked')) === 'true');
 
   // game details
-  await page.click('button[aria-label="جزئیات Counter-Strike 2"]');
+  await page.click('button[data-game="Counter-Strike 2"]');
   check('game details open', (await text(page)).includes('پینگ از هر خروجی'));
   const box = await page.locator('[role=dialog] > div.glass').boundingBox();
   check('dialog is inside the viewport', box && box.y >= 0 && box.y + box.height <= 900, JSON.stringify(box));
@@ -116,7 +116,7 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   check('FAQ question opens', (await q2.getAttribute('aria-expanded')) === 'true');
   check('closed FAQ answers are inert', (await page.locator('#faq [id^="faq-a-"][inert]').count()) === (await page.locator('#faq [id^="faq-a-"]').count()) - 1);
 
-  const cover = page.locator('button[aria-label="جزئیات Dota 2"]');
+  const cover = page.locator('button[data-game="Dota 2"]');
   await cover.scrollIntoViewIfNeeded();
   await page.waitForTimeout(400); // let the parallax settle before aiming the cursor
   const cb = await cover.boundingBox();
@@ -284,9 +284,9 @@ const text = (page) => page.evaluate(() => document.body.innerText);
   check('stat value changes', body.includes('19ms'));
   check('ping section title changes', body.includes('تیتر آزمایشی تست پینگ'));
   check('game name changes', body.includes('Test Game X'));
-  const upSrc = await page.locator('button[aria-label^="جزئیات"]').nth(1).locator('img').getAttribute('src');
+  const upSrc = await page.locator('button[data-game]').nth(1).locator('img').getAttribute('src');
   check('uploaded cover is shown', (upSrc ?? '').startsWith('data:image/'));
-  check('new game appears in covered games', (await page.locator('button[aria-label="جزئیات Arena Breakout"]').count()) === 1);
+  check('new game appears in covered games', (await page.locator('button[data-game="Arena Breakout"]').count()) === 1);
   check('new featured game appears in the hero scene', (await page.locator('[role=radio][aria-label="مقصد Arena Breakout"]').count()) === 1);
   check('new featured game appears in the ping test', (await page.locator('#ping-test [role=radio][aria-label="Arena Breakout"]').count()) === 1);
   await page.click('[role=radio][aria-label="مقصد Arena Breakout"]');

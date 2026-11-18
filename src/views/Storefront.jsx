@@ -4,7 +4,7 @@ import HeroScene from './HeroScene.jsx';
 import { CountUp, useParallax } from '../motion.jsx';
 import { useStore } from '../store.jsx';
 import { GameCover, ModeEmblem } from '../art.jsx';
-import { coverSrc } from '../covers.js';
+import { coverSet, coverSrc, coverThumb } from '../covers.js';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, SectionTitle, Tabs } from '../ui.jsx';
 import { bestPing, dnsSlots, durations, EXITS, fa, GB, ISPS, MODES, pingTiers, priceOf, recommendTier, tierLabel, toman, trackedGames } from '../data.js';
 
@@ -107,7 +107,7 @@ function PingTest() {
             onClick={() => { pref('game', g.id); start(); }}
             className={cx('relative aspect-[2/3] min-w-0 flex-1 overflow-hidden rounded-lg border-2 transition', g.id === game.id ? 'border-white' : 'border-transparent opacity-50 hover:opacity-90')}
           >
-            <img src={coverSrc(g.cover)} alt="" className="absolute inset-0 size-full object-cover" />
+            <img src={coverThumb(g.cover)} alt="" className="absolute inset-0 size-full object-cover" />
           </button>
         ))}
       </div>
@@ -311,7 +311,7 @@ function Games() {
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {s.site.games.map((g, i) => (
           <div key={g.id} data-depth={COL_DEPTH[i % cols] ?? 0}>
-            <GameCover name={g.name} index={i} src={coverSrc(g.cover)} onClick={() => setOpen(g)}>
+            <GameCover name={g.name} index={i} src={coverSrc(g.cover)} srcSet={coverSet(g.cover)} onClick={() => setOpen(g)}>
               <div className="mt-1.5 flex items-baseline gap-2 text-xs" dir="ltr">
                 <Mono className="text-zinc-400 line-through">{g.isp}</Mono>
                 <Mono className="font-bold text-ok">{bestPing(g)}ms</Mono>
@@ -358,7 +358,7 @@ function Calculator() {
                   key={g.id} type="button" aria-pressed={on} onClick={() => toggle(g.id)}
                   className={cx('flex items-center gap-2 rounded-lg border py-1 ps-1 pe-3 text-xs transition-colors', on ? 'border-white/60 bg-white/10 text-white' : 'border-line text-zinc-400 hover:text-white')}
                 >
-                  {src ? <img src={src} alt="" className="h-7 w-5 rounded object-cover" /> : <span className="h-7 w-5 rounded bg-raise" />}
+                  {src ? <img src={coverThumb(g.cover)} alt="" className="h-7 w-5 rounded object-cover" /> : <span className="h-7 w-5 rounded bg-raise" />}
                   <Mono>{g.name}</Mono>
                   {on && <Check className="size-3.5" />}
                 </button>
@@ -763,7 +763,7 @@ function Faq({ go }) {
   const t = s.site.text.faq;
   const term = q.trim();
   const list = s.site.faq.filter((f) => !term || `${f.q} ${f.a}`.includes(term));
-  const covers = s.site.games.map((g) => coverSrc(g.cover)).filter(Boolean).slice(0, 4);
+  const covers = s.site.games.map((g) => coverThumb(g.cover)).filter(Boolean).slice(0, 4);
   if (!s.site.faq.length) return null;
   return (
     <section ref={scene} id="faq" className="relative isolate overflow-clip pt-24 pb-6">

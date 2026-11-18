@@ -2,31 +2,45 @@
 // VALORANT, Fortnite and Minecraft are not on Steam, so their tile is the official logo
 // (from Wikimedia) on a dark background in the game's colour.
 import apex from './assets/covers/apex.webp';
+import apexSm from './assets/covers/apex-sm.webp';
 import cs2 from './assets/covers/cs2.webp';
+import cs2Sm from './assets/covers/cs2-sm.webp';
 import dota2 from './assets/covers/dota2.webp';
+import dota2Sm from './assets/covers/dota2-sm.webp';
 import fc26 from './assets/covers/fc26.webp';
+import fc26Sm from './assets/covers/fc26-sm.webp';
 import fortnite from './assets/covers/fortnite.webp';
+import fortniteSm from './assets/covers/fortnite-sm.webp';
 import minecraft from './assets/covers/minecraft.webp';
+import minecraftSm from './assets/covers/minecraft-sm.webp';
 import pubg from './assets/covers/pubg.webp';
+import pubgSm from './assets/covers/pubg-sm.webp';
 import rust from './assets/covers/rust.webp';
+import rustSm from './assets/covers/rust-sm.webp';
 import valorant from './assets/covers/valorant.webp';
+import valorantSm from './assets/covers/valorant-sm.webp';
 import warzone from './assets/covers/warzone.webp';
+import warzoneSm from './assets/covers/warzone-sm.webp';
 
 export const COVERS = {
-  cs2: { src: cs2, label: 'Counter-Strike 2' },
-  valorant: { src: valorant, label: 'VALORANT' },
-  fc26: { src: fc26, label: 'EA SPORTS FC 26' },
-  dota2: { src: dota2, label: 'Dota 2' },
-  warzone: { src: warzone, label: 'Call of Duty: Warzone' },
-  apex: { src: apex, label: 'Apex Legends' },
-  pubg: { src: pubg, label: 'PUBG: BATTLEGROUNDS' },
-  fortnite: { src: fortnite, label: 'Fortnite' },
-  rust: { src: rust, label: 'Rust' },
-  minecraft: { src: minecraft, label: 'Minecraft' },
+  cs2: { src: cs2, sm: cs2Sm, label: 'Counter-Strike 2' },
+  valorant: { src: valorant, sm: valorantSm, label: 'VALORANT' },
+  fc26: { src: fc26, sm: fc26Sm, label: 'EA SPORTS FC 26' },
+  dota2: { src: dota2, sm: dota2Sm, label: 'Dota 2' },
+  warzone: { src: warzone, sm: warzoneSm, label: 'Call of Duty: Warzone' },
+  apex: { src: apex, sm: apexSm, label: 'Apex Legends' },
+  pubg: { src: pubg, sm: pubgSm, label: 'PUBG: BATTLEGROUNDS' },
+  fortnite: { src: fortnite, sm: fortniteSm, label: 'Fortnite' },
+  rust: { src: rust, sm: rustSm, label: 'Rust' },
+  minecraft: { src: minecraft, sm: minecraftSm, label: 'Minecraft' },
 };
 
 /** A built-in key, an uploaded data URL, or nothing (the card then draws its own pattern). */
 export const coverSrc = (cover) => (typeof cover === 'string' && cover.startsWith('data:image/') ? cover : COVERS[cover]?.src ?? null);
+/** 200×300 version for thumbnails; uploaded covers have only one size. */
+export const coverThumb = (cover) => (typeof cover === 'string' && cover.startsWith('data:image/') ? cover : COVERS[cover]?.sm ?? null);
+/** srcset for a built-in cover (200w + 400w), so phones and small cards fetch the small file. */
+export const coverSet = (cover) => (COVERS[cover] ? `${COVERS[cover].sm} 200w, ${COVERS[cover].src} 400w` : undefined);
 
 /** Best built-in cover for a game name typed by an admin, e.g. "CS2" → cs2. */
 export function guessCover(name = '') {
