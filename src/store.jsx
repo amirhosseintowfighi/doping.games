@@ -1,33 +1,87 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as D from './data.js';
+import { guessCover } from './covers.js';
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
-const SITE_KEY = 'doping.site.v1';
+export const SITE_KEY = 'doping.site.v2';
+const OLD_SITE_KEYS = ['doping.site.v1'];
 /** Saved settings layered over the defaults, so a newer build with new fields still gets them. */
 function loadSite() {
   const base = D.seedSite();
   try {
-    const saved = JSON.parse(localStorage.getItem(SITE_KEY) ?? 'null');
-    if (!saved || Object.keys(D.validateSite({ ...base, ...saved })).length) return base;
-    return { ...base, ...saved };
+    const raw = localStorage.getItem(SITE_KEY) ?? OLD_SITE_KEYS.map((k) => localStorage.getItem(k)).find(Boolean) ?? 'null';
+    const saved = JSON.parse(raw);
+    if (!saved) return base;
+    const site = D.migrateSite(saved, base, guessCover);
+    return Object.keys(D.validateSite(site)).length ? base : site;
   } catch {
     return base;
   }
 }
 
+/** Per-visitor choices (ISP, favourite servers, last game tested). Kept on this device only. */
+const PREFS_KEY = 'doping.prefs.v1';
+function loadPrefs() {
+  const base = { isp: 'mci', favs: [], game: 'cs2', guide: {} };
+  try {
+    return { ...base, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') };
+  } catch {
+    return base;
+  }
+}
+
+/**
+ * Admin-managed records (game servers, routers, discount codes, payment gateways) also survive a reload.
+ * Only their definitions are stored; live numbers (players, CPU, peers) keep being simulated.
+ */
+const ADMIN_KEY = 'doping.admin.v1';
+const SERVER_FIELDS = ['id', 'name', 'game', 'mode', 'map', 'max', 'host', 'port', 'vip', 'ac', 'tick', 'status'];
+const ROUTER_FIELDS = ['id', 'name', 'role', 'city', 'host', 'apiPort', 'apiUser', 'version', 'model', 'wg', 'subnet', 'status'];
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
+function loadAdmin() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ADMIN_KEY) ?? 'null');
+    if (!saved) return {};
+    const out = {};
+    if (Array.isArray(saved.servers)) {
+      out.servers = saved.servers.map((v) => {
+        const players = v.status === 'online' ? D.rint(Math.ceil(v.max * 0.3), Math.max(1, Math.floor(v.max * 0.9))) : 0;
+        return { ping: 12, ...v, players, list: D.roster(players) };
+      });
+    }
+    if (Array.isArray(saved.routers)) {
+      out.routers = saved.routers.map((r) => ({ cpu: 20, ram: 30, peers: 0, queues: 0, handshake: 5, uptime: '1d', lastSync: null, ...r }));
+    }
+    if (Array.isArray(saved.discounts)) out.discounts = saved.discounts;
+    if (Array.isArray(saved.gateways)) out.gateways = saved.gateways;
+    return out;
+  } catch {
+    return {};
+  }
+}
+const adminSnapshot = (s) => JSON.stringify({
+  servers: s.servers.map((v) => pick(v, SERVER_FIELDS)),
+  routers: s.routers.map((r) => pick(r, ROUTER_FIELDS)),
+  discounts: s.discounts,
+  gateways: s.gateways,
+});
+
 const init = () => ({
   site: loadSite(),
+  prefs: loadPrefs(),
+  rec: null,
+  pingRun: 0,
   users: D.seedUsers(),
   routers: D.seedRouters(),
   servers: D.seedServers(),
-  pricing: D.seedPricing(),
   discounts: D.seedDiscounts(),
   gateways: D.seedGateways(),
   invoices: D.seedInvoices(),
   tickets: D.seedTickets(),
   logs: D.seedLogs(),
+  ...loadAdmin(),
   wallet: 185_000,
   steamId: '76561198412770351',
   perks: { slot: true, tag: true, skins: false },
@@ -92,6 +146,21 @@ export function StoreProvider({ children }) {
     root.setProperty('--color-brand', s.site.accent);
     root.setProperty('--color-brand2', `color-mix(in srgb, ${s.site.accent} 82%, white)`);
   }, [s.site]);
+
+  useEffect(() => {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(s.prefs)); } catch { /* storage is optional */ }
+  }, [s.prefs]);
+
+  // Persist admin records only when their definitions change, not on every simulated tick.
+  const lastAdmin = useRef('');
+  const snapshot = adminSnapshot(s);
+  useEffect(() => {
+    if (snapshot === lastAdmin.current) return;
+    if (lastAdmin.current) {
+      try { localStorage.setItem(ADMIN_KEY, snapshot); } catch { /* storage is optional */ }
+    }
+    lastAdmin.current = snapshot;
+  }, [snapshot]);
 
   const set = useCallback((fn) => setS((prev) => ({ ...prev, ...(typeof fn === 'function' ? fn(prev) : fn) })), []);
 

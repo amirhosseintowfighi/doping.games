@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Copy, X } from 'lucide-react';
 
 export const cx = (...a) => a.filter(Boolean).join(' ');
@@ -27,7 +28,7 @@ export function Btn({ variant = 'primary', size = 'md', icon: Icon, children, cl
   );
 }
 
-export const Card = ({ className, red: _red, as: As = 'div', ...p }) => <As {...p} className={cx('glass relative', className)} />;
+export const Card = ({ className, red: _red, as: As = 'div', ...p }) => <As {...p} className={cx('glass spot relative', className)} />;
 
 const TONE = {
   ok: 'bg-emerald-500/10 text-emerald-300', warn: 'bg-amber-500/10 text-amber-300', bad: 'bg-red-500/10 text-red-300',
@@ -120,7 +121,9 @@ const Head = ({ title, onClose }) => (
 export function Modal({ open, onClose, title, children, wide, footer }) {
   useEscape(open, onClose);
   if (!open) return null;
-  return (
+  // Portalled to <body>: an animated ancestor would otherwise become the containing block and the dialog
+  // would be centred on the whole page instead of the viewport.
+  return createPortal(
     <div className="gutter fixed inset-0 z-50 flex items-center justify-center py-6" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
       <div className={cx('glass animate-rise relative flex max-h-full w-full flex-col', wide ? 'max-w-3xl' : 'max-w-lg')}>
@@ -128,21 +131,23 @@ export function Modal({ open, onClose, title, children, wide, footer }) {
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
         {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-6 py-4">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 export function Drawer({ open, onClose, title, children }) {
   useEscape(open, onClose);
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
       <div className="animate-rise absolute inset-y-0 left-0 flex w-full max-w-2xl flex-col border-r border-line bg-card">
         <Head title={title} onClose={onClose} />
         <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -160,7 +165,7 @@ export function Toggle({ checked, onChange, label }) {
   return (
     <button
       type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} dir="ltr"
-      className={cx('relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-ok' : 'bg-edge')}
+      className={cx("relative h-6 w-10 shrink-0 rounded-full transition-colors duration-200 before:absolute before:-inset-2 before:content-['']", checked ? 'bg-ok' : 'bg-edge')}
     >
       <span className={cx('absolute top-1 size-4 rounded-full bg-white transition-all duration-200', checked ? 'left-5' : 'left-1')} />
     </button>

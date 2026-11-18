@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { CircleAlert, CircleCheck, X } from 'lucide-react';
 import DopingLogo from './Logo.jsx';
 import { StoreProvider, useStore } from './store.jsx';
+import { BackToTop, ScrollProgress, useSpotlight } from './motion.jsx';
 import { cx, Mono } from './ui.jsx';
 import { fa } from './data.js';
 import Storefront from './views/Storefront.jsx';
-import UserPanel from './views/UserPanel.jsx';
-import Admin from './views/Admin.jsx';
-import Blueprint from './views/Blueprint.jsx';
+// The storefront ships in the first bundle; the other views load when first opened.
+const UserPanel = lazy(() => import('./views/UserPanel.jsx'));
+const Admin = lazy(() => import('./views/Admin.jsx'));
+const Blueprint = lazy(() => import('./views/Blueprint.jsx'));
 
 const VIEWS = [
   { id: 'store', label: 'فروشگاه و سرورها', short: 'فروشگاه', C: Storefront },
@@ -20,6 +22,10 @@ const fromHash = () => VIEWS.find((v) => `#${v.id}` === window.location.hash)?.i
 function Shell() {
   const { s } = useStore();
   const [view, setView] = useState(fromHash);
+  useSpotlight();
+  const [bannerClosed, setBannerClosed] = useState('');
+  const banner = s.site.banner;
+  const showBanner = banner.on && banner.text.trim() && bannerClosed !== banner.text;
 
   useEffect(() => {
     const h = () => setView(fromHash());
@@ -35,16 +41,24 @@ function Shell() {
 
   return (
     <div className="min-h-screen">
+      {showBanner && (
+        <div className="gutter relative z-40 flex items-center justify-center gap-3 bg-brand py-2 text-center text-[13px] font-bold text-white" role="status">
+          <span className="min-w-0">{banner.text}</span>
+          <button type="button" onClick={() => setBannerClosed(banner.text)} aria-label="بستن اطلاعیه" className="grid size-8 shrink-0 place-items-center rounded-lg hover:bg-black/20">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
       <header className="sticky z-40 border-b border-line bg-ink/85 backdrop-blur-xl" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
         <div className="gutter mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-1 py-3">
-          <button type="button" onClick={() => go('store')} aria-label="دوپینگ · صفحه اصلی" className="shrink-0">
+          <button type="button" onClick={() => go('store')} aria-label="دوپینگ · صفحه اصلی" className="shrink-0 py-2">
             <DopingLogo className="h-6 sm:h-7" />
           </button>
-          <nav className="order-3 flex w-full gap-5 overflow-x-auto lg:order-none lg:w-auto" aria-label="محیط‌های پلتفرم">
+          <nav className="order-3 -mx-2 flex w-[calc(100%+1rem)] overflow-x-auto sm:mx-0 sm:w-full sm:gap-5 lg:order-none lg:w-auto" aria-label="محیط‌های پلتفرم">
             {VIEWS.map((v) => (
               <button
                 key={v.id} type="button" onClick={() => go(v.id)} aria-current={view === v.id ? 'page' : undefined}
-                className={cx('shrink-0 border-b-2 py-1.5 text-[13px] whitespace-nowrap transition-colors', view === v.id ? 'border-white font-bold text-white' : 'border-transparent text-zinc-400 hover:text-white')}
+                className={cx('min-h-10 flex-1 shrink-0 border-b-2 px-2 py-2 text-[13px] whitespace-nowrap transition-colors sm:flex-none sm:px-0', view === v.id ? 'border-white font-bold text-white' : 'border-transparent text-zinc-400 hover:text-white')}
               >
                 <span className="hidden sm:inline">{v.label}</span><span className="sm:hidden">{v.short}</span>
               </button>
@@ -55,10 +69,13 @@ function Shell() {
             <span className="font-normal text-zinc-600">{fa(s.wallet)} تومان</span>
           </button>
         </div>
+        <ScrollProgress />
       </header>
 
       <main key={view} className="animate-rise">
-        <Current go={go} />
+        <Suspense fallback={<div className="gutter mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center text-sm text-zinc-500" role="status">در حال بارگذاری…</div>}>
+          <Current go={go} />
+        </Suspense>
       </main>
 
       <footer className="gutter mx-auto mt-24 max-w-6xl border-t border-line py-8">
@@ -68,6 +85,8 @@ function Shell() {
           <p>نسخه نمایشی: داده‌ها در مرورگر شبیه‌سازی می‌شوند و به روتر واقعی وصل نیستند.</p>
         </div>
       </footer>
+
+      <BackToTop />
 
       <div className="gutter pointer-events-none fixed inset-x-0 bottom-5 z-[70] flex flex-col items-center gap-2" aria-live="polite">
         {s.toasts.map((t) => (

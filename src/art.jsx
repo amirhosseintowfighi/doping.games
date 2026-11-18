@@ -1,5 +1,6 @@
 // Small vector pieces: original game covers, the quota ring, and the cluster diagram.
 import { Blocks, Bomb, Crosshair, Hammer, Swords, Target } from 'lucide-react';
+import { useTilt } from './motion.jsx';
 
 /* ───────────────────────── Game covers (original artwork, not publisher art) ───────────────────────── */
 
@@ -17,18 +18,36 @@ const PATTERNS = [
   <>{[[14, 14], [50, 14], [86, 14], [32, 50], [68, 50], [50, 86]].map(([x, y]) => <rect key={`${x}${y}`} x={x} y={y} width="26" height="26" rx="3" {...S} />)}</>,
 ];
 
-/** A cover made for Doping: a quiet line pattern per title and the game's name. */
-export function GameCover({ name, index = 0, children }) {
+/**
+ * Game cover card. With `src` it shows the game's artwork; without one it draws a quiet line pattern.
+ * With `onClick` the whole card is a button.
+ */
+export function GameCover({ name, index = 0, src, srcSet, sizes = '(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw', children, onClick }) {
+  const Tag = onClick ? 'button' : 'div';
+  const tilt = useTilt(10);
   return (
-    <div className="group relative aspect-[4/5] overflow-hidden rounded-2xl border border-line bg-card transition-colors duration-300 hover:border-edge">
-      <svg viewBox="0 0 120 100" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full transition-transform duration-500 group-hover:scale-105" aria-hidden="true">
-        {PATTERNS[index % PATTERNS.length]}
-      </svg>
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-card via-card/90 to-transparent p-4 pt-10">
-        <div className="mono text-base leading-tight font-bold" dir="ltr">{name}</div>
-        {children}
-      </div>
-    </div>
+    <Tag
+      ref={tilt}
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      data-game={name}
+      className="tilt group relative block aspect-[2/3] w-full overflow-hidden rounded-2xl border border-line bg-card text-start hover:border-zinc-500"
+    >
+      {src ? (
+        <img src={src} srcSet={srcSet} sizes={srcSet ? sizes : undefined} alt={onClick ? '' : name} loading="lazy" className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105" />
+      ) : (
+        <svg viewBox="0 0 120 100" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full" aria-hidden="true">
+          {PATTERNS[index % PATTERNS.length]}
+        </svg>
+      )}
+      {(children || !src || onClick) && (
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-12">
+          <div className="mono truncate text-sm leading-tight font-bold text-white" dir="ltr">{name}</div>
+          {children}
+        </div>
+      )}
+      {onClick && <span className="absolute top-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">جزئیات</span>}
+    </Tag>
   );
 }
 

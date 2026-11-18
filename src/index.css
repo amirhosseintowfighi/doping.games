@@ -13,6 +13,9 @@
   --color-silver: #a1a1aa;
   --color-ok: #10b981;
   --color-warn: #f59e0b;
+  /* Greys tuned for WCAG AA (≥ 4.5:1) as small text on both the page and card backgrounds. */
+  --color-zinc-500: #8f8f99;
+  --color-zinc-600: #7c7c86;
   --font-sans: "Vazirmatn Variable", "Vazirmatn", "IRANSansX", Tahoma, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
   --font-weight-bold: 600;
@@ -57,3 +60,44 @@ button:disabled { cursor: not-allowed; }
 select.field option { background: #101014; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* 3D tilt (driven by useTilt): the card leans toward the cursor and a soft glare follows it. */
+.tilt {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1), border-color 0.3s;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.tilt[data-tilt="on"] { transition: transform 0.08s linear, border-color 0.3s; }
+.tilt::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgb(255 255 255 / 0.22), transparent 55%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.tilt[data-tilt="on"]::after { opacity: 1; }
+
+.no-glare::after { display: none; }
+
+/* Cursor spotlight (driven by useSpotlight): a faint light under the pointer. */
+.spot { isolation: isolate; }
+.spot::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(380px circle at var(--mx, -999px) var(--my, -999px), rgb(255 255 255 / 0.07), transparent 45%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.spot:hover::before { opacity: 1; }
+
+/* Parallax layers only ever move by transform. */
+[data-depth] { will-change: transform; }
+
+/* Stacked tables: below 768px each row becomes a card, each cell a "label · value" line. */
+@media (max-width: 767px) {
+  .rtable, .rtable > tbody, .rtable > tbody > tr, .rtable > tbody > tr > td { display: block; width: 100%; }
+  .rtable > thead { display: none; }
+  .rtable > tbody > tr { border: 1px solid var(--color-line); border-radius: 12px; margin: 0 0 8px; padding: 6px 2px; background: rgb(255 255 255 / 0.015); }
+  .rtable > tbody > tr > td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 12px !important; white-space: normal; min-width: 0; }
+  .rtable > tbody > tr > td[data-label]::before { content: attr(data-label); font-size: 11px; color: #71717a; flex-shrink: 0; }
+  .rtable > tbody > tr > td[data-head] { justify-content: flex-start; padding-block: 8px !important; }
+  .rtable > tbody > tr > td > * { min-width: 0; max-width: 100%; }
+  .rtable > tbody > tr > td .w-56, .rtable > tbody > tr > td .w-28 { width: 12rem; }
+}

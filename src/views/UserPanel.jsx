@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import {
-  ArrowDown, ArrowUp, CalendarClock, CircleAlert, Crown, Download, Eye, EyeOff, Fingerprint, Globe, KeyRound, LayoutDashboard, LifeBuoy,
+  ArrowDown, ArrowUp, CalendarClock, Check, Gamepad2, Monitor, Router as RouterIcon, Smartphone, CircleAlert, Crown, Download, Eye, EyeOff, Fingerprint, Globe, KeyRound, LayoutDashboard, LifeBuoy,
   Link2, Plus, QrCode, Receipt, RefreshCw, Send, ShieldCheck, Trash2, Unlink, Wallet, Wifi, Zap,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
 import { Ring } from '../art.jsx';
+import { CountUp } from '../motion.jsx';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
-import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, PLAN_NAME, priceOf, tierLabel, toman, uid, wgKey } from '../data.js';
+import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, pingTiers, priceOf, tierLabel, toman, uid, wgKey } from '../data.js';
 
 const STATUS = {
   active: ['فعال', 'ok'], quota: ['اتمام حجم', 'bad'], expired: ['منقضی', 'warn'], disabled: ['غیرفعال', 'mute'],
@@ -57,8 +58,10 @@ function Dashboard({ setTab }) {
   const [st, tone] = STATUS[me.status];
   const exit = EXITS.find((e) => e.id === s.exit);
   const tier = unlimited ? 'inf' : me.quota / GB;
-  const renewPrice = priceOf(s.pricing, { kind: me.plan, tier: s.pricing.ping[tier] ? tier : 15, slots: 1, months: 1 }).total;
-  const extraPrice = pack * s.pricing.extraPerGb;
+  const P = s.site.pricing;
+  const PLAN_NAME = s.site.planNames;
+  const renewPrice = priceOf(P, { kind: me.plan === 'dns' ? 'ping' : me.plan, tier: pingTiers(P).includes(tier) ? tier : pingTiers(P)[0], slots: 1, months: 1 }).total;
+  const extraPrice = pack * P.extraPerGb;
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_290px]">
@@ -73,7 +76,7 @@ function Dashboard({ setTab }) {
         <div className="mt-6 grid grid-cols-1 items-center gap-8 sm:grid-cols-[200px_minmax(0,1fr)]">
           <Ring pct={unlimited ? 0 : pct} className="mx-auto w-full max-w-[200px]">
             <div>
-              <Mono className="block text-4xl leading-none font-bold">{unlimited ? '∞' : gb(Math.max(0, me.quota - used))}</Mono>
+              <Mono className="block text-4xl leading-none font-bold">{unlimited ? '∞' : <CountUp value={Math.max(0, me.quota - used) / GB} decimals={2} duration={600} format={(n) => n.toFixed(2)} />}</Mono>
               <Mono className="mt-1.5 block text-xs text-zinc-500">{unlimited ? 'Unlimited' : `GB / ${me.quota / GB} GB`}</Mono>
               <div className="mt-1 text-[11px] text-zinc-500">حجم باقی‌مانده</div>
             </div>
@@ -139,6 +142,8 @@ function Dashboard({ setTab }) {
         </Card>
       </div>
 
+      <UsageChart />
+
       <PayFromWallet
         open={extra} onClose={() => setExtra(false)} title="خرید حجم اضافه" icon={Plus} price={extraPrice} cta="خرید حجم"
         onPaid={() => {
@@ -152,7 +157,7 @@ function Dashboard({ setTab }) {
           {[5, 10, 20, 50].map((g) => (
             <button key={g} type="button" onClick={() => setPack(g)} aria-pressed={pack === g} className={cx('relative rounded-2xl py-3 text-center transition', pack === g ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               <Mono className="block text-lg font-black">+{g}</Mono>
-              <Mono className="text-[10px] text-silver">GB</Mono>
+              <Mono className="text-[11px] text-silver">GB</Mono>
             </button>
           ))}
         </div>
@@ -171,6 +176,185 @@ function Dashboard({ setTab }) {
         </p>
       </PayFromWallet>
     </div>
+  );
+}
+
+
+/* ───────────────────────── Usage chart ───────────────────────── */
+
+const DAY_MS = 86_400_000;
+/** Daily traffic for the last 14 days. Seeded per user so it stays put between renders. */
+function usageDays(seed) {
+  let x = [...seed].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const r = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
+  return Array.from({ length: 14 }, (_, i) => {
+    const weekend = [4, 5].includes(new Date(Date.now() - (13 - i) * DAY_MS).getDay());
+    const down = (0.05 + r() * 0.42) * (weekend ? 1.7 : 1);
+    return { at: Date.now() - (13 - i) * DAY_MS, down, up: down * (0.12 + r() * 0.1) };
+  });
+}
+
+/** Phones get the last 7 days so each bar is wide enough to tap. */
+function useNarrow(px = 640) {
+  const q = `(max-width: ${px - 1}px)`;
+  const [narrow, setNarrow] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const h = () => setNarrow(m.matches);
+    m.addEventListener('change', h);
+    return () => m.removeEventListener('change', h);
+  }, [q]);
+  return narrow;
+}
+
+function UsageChart() {
+  const { me } = useStore();
+  const narrow = useNarrow();
+  const all = useMemo(() => usageDays(me.id), [me.id]);
+  const days = narrow ? all.slice(-7) : all;
+  const [sel, setSel] = useState(days.length - 1);
+  useEffect(() => { setSel(days.length - 1); }, [days.length]);
+  const [show, setShow] = useState('both');
+  const val = (d) => (show === 'down' ? d.down : show === 'up' ? d.up : d.down + d.up);
+  const max = Math.max(...days.map(val)) * 1.1;
+  const d = days[sel];
+  const total = days.reduce((a, x) => a + val(x), 0);
+  return (
+    <Card className="p-6 xl:col-span-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[15px] font-black">مصرف {fa(days.length)} روز اخیر</h3>
+          <p className="text-xs text-zinc-500">جمع: <Mono className="text-zinc-300">{total.toFixed(2)} GB</Mono> · میانگین روزانه <Mono className="text-zinc-300">{(total / days.length).toFixed(2)} GB</Mono></p>
+        </div>
+        <div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs" role="tablist" aria-label="نوع ترافیک">
+          {[['both', 'همه'], ['down', 'دانلود'], ['up', 'آپلود']].map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={show === id} onClick={() => setShow(id)} className={cx('rounded-md px-3 py-1.5 transition-colors', show === id ? 'bg-white/10 font-bold text-white' : 'text-zinc-400 hover:text-white')}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-6 flex h-36 items-end gap-1 sm:gap-1.5" dir="ltr" role="listbox" aria-label="روزها">
+        {days.map((x, i) => {
+          const on = i === sel;
+          return (
+            <button
+              key={x.at} type="button" role="option" aria-selected={on} aria-label={`${faDate(x.at)}: ${val(x).toFixed(2)} GB`}
+              onClick={() => setSel(i)} onMouseEnter={() => setSel(i)} onFocus={() => setSel(i)}
+              className="group flex h-full min-w-0 flex-1 flex-col justify-end"
+            >
+              <span className="flex w-full flex-col justify-end overflow-hidden rounded-t" style={{ height: `${(val(x) / max) * 100}%` }}>
+                {show !== 'down' && <span className={cx('w-full transition-colors', on ? 'bg-zinc-300' : 'bg-zinc-600 group-hover:bg-zinc-500')} style={{ flex: x.up }} />}
+                {show !== 'up' && <span className={cx('w-full transition-colors', on ? 'bg-white' : 'bg-zinc-400 group-hover:bg-zinc-300')} style={{ flex: x.down }} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] text-zinc-600" dir="ltr">
+        <span>{new Date(days[0].at).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' })}</span>
+        <span>امروز</span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl bg-ink px-4 py-3 text-sm" aria-live="polite">
+        <span className="font-bold">{sel === days.length - 1 ? 'امروز' : faDate(d.at)}</span>
+        <span className="flex items-center gap-1.5 text-zinc-400"><span className="size-2 rounded-sm bg-white" /> دانلود <Mono className="text-white">{d.down.toFixed(2)} GB</Mono></span>
+        <span className="flex items-center gap-1.5 text-zinc-400"><span className="size-2 rounded-sm bg-zinc-500" /> آپلود <Mono className="text-white">{d.up.toFixed(2)} GB</Mono></span>
+      </div>
+    </Card>
+  );
+}
+
+/* ───────────────────────── Setup guide ───────────────────────── */
+
+const DEVICES = [
+  { id: 'windows', label: 'ویندوز', icon: Monitor },
+  { id: 'android', label: 'اندروید', icon: Smartphone },
+  { id: 'ios', label: 'آیفون', icon: Smartphone },
+  { id: 'console', label: 'PS5 / Xbox', icon: Gamepad2 },
+  { id: 'router', label: 'روتر میکروتیک', icon: RouterIcon },
+];
+
+function SetupGuide({ onDownload, onQr }) {
+  const { s, me, set } = useStore();
+  const [dev, setDev] = useState('windows');
+  const { dns: DNS, wg: WG } = s.site;
+  const [host, port] = WG.endpoint.split(':');
+  const ros = [
+    `/interface wireguard add name=doping private-key="${s.myKeys.priv}" mtu=${WG.mtu}`,
+    `/interface wireguard peers add interface=doping public-key="${WG.serverKey}" preshared-key="${s.myKeys.psk}" endpoint-address=${host} endpoint-port=${port} allowed-address=0.0.0.0/0 persistent-keepalive=25s`,
+    `/ip address add address=${me.ip}/32 interface=doping`,
+    '/routing table add name=doping fib',
+    '/ip route add dst-address=0.0.0.0/0 gateway=doping routing-table=doping',
+    '/ip firewall nat add chain=srcnat out-interface=doping action=masquerade',
+    '/routing rule add src-address=192.168.88.50 action=lookup table=doping',
+  ].join('\n');
+  const STEPS = {
+    windows: [
+      ['برنامه WireGuard رو از سایت رسمیش نصب کن.', <Mono key="u" className="text-zinc-300">wireguard.com/install</Mono>],
+      ['فایل کانفیگ رو دانلود کن.', <Btn key="b" size="sm" variant="ghost" onClick={onDownload}>دانلود <Mono>.conf</Mono></Btn>],
+      ['توی WireGuard روی Import tunnel(s) from file بزن و همین فایل رو انتخاب کن.'],
+      ['Activate رو بزن. وضعیت باید Active بشه؛ بعد بازی رو باز کن.'],
+    ],
+    android: [
+      ['WireGuard رو از Google Play نصب کن.'],
+      ['توی برنامه روی + بزن و Scan from QR code رو انتخاب کن.', <Btn key="q" size="sm" variant="ghost" onClick={onQr}>نمایش QR</Btn>],
+      ['یک اسم بده (مثلاً Doping) و تانل رو روشن کن.'],
+    ],
+    ios: [
+      ['WireGuard رو از App Store نصب کن.'],
+      ['روی Add a tunnel و بعد Create from QR code بزن.', <Btn key="q" size="sm" variant="ghost" onClick={onQr}>نمایش QR</Btn>],
+      ['اجازه افزودن VPN رو بده و تانل رو روشن کن.'],
+    ],
+    console: [
+      ['کنسول‌ها برنامه WireGuard ندارن. برای رفع تحریم، DNS دستی بذار:', <Mono key="d" className="text-zinc-300">{DNS.primary} · {DNS.secondary}</Mono>],
+      ['آی‌پی اینترنت خونه رو از تب «DNS هوشمند» ثبت کن.'],
+      ['برای کاهش پینگ، کانفیگ رو روی روتر بذار (تب «روتر میکروتیک») تا ترافیک کنسول از تانل رد بشه.'],
+    ],
+    router: [
+      ['RouterOS نسخه ۷ لازمه. با Winbox یا SSH وارد ترمینال روتر شو.'],
+      ['این دستورها رو بزن. توی دستور آخر، آی‌پی کنسول یا کامپیوترت رو به‌جای 192.168.88.50 بذار.', <div key="c" className="mt-2 w-full"><pre dir="ltr" className="mono max-h-44 overflow-auto rounded-lg bg-ink p-3 text-left text-[11px] leading-5 text-zinc-300">{ros}</pre><CopyBtn text={ros} label="کپی دستورها" className="mt-2" /></div>],
+      ['از کنسول یک تست پینگ بگیر؛ باید زیر ۵۰ میلی‌ثانیه باشه.'],
+    ],
+  };
+  const steps = STEPS[dev];
+  const done = s.prefs.guide[dev] ?? [];
+  const toggle = (i) => set((p) => {
+    const cur = p.prefs.guide[dev] ?? [];
+    return { prefs: { ...p.prefs, guide: { ...p.prefs.guide, [dev]: cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i] } } };
+  });
+  const finished = done.length === steps.length;
+  return (
+    <Card className="p-5 lg:col-span-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-[15px] font-black">راهنمای اتصال</h3>
+        <span className="text-xs text-zinc-500">{fa(done.length)} از {fa(steps.length)} قدم</span>
+      </div>
+      <div className="mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="دستگاه">
+        {DEVICES.map((d) => (
+          <button key={d.id} type="button" role="tab" aria-selected={dev === d.id} onClick={() => setDev(d.id)} className={cx('flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] transition-colors', dev === d.id ? 'bg-white/10 font-bold text-white' : 'text-zinc-400 hover:text-white')}>
+            <d.icon className="size-4" />{d.label}
+          </button>
+        ))}
+      </div>
+      <Progress value={(done.length / steps.length) * 100} tone="bg-ok" className="mt-4" />
+      <ol className="mt-4 space-y-2">
+        {steps.map(([text, extra], i) => {
+          const on = done.includes(i);
+          return (
+            <li key={`${dev}-${i}`} className="flex items-start gap-3 rounded-xl bg-ink p-3">
+              <button
+                type="button" onClick={() => toggle(i)} aria-pressed={on} aria-label={on ? `قدم ${i + 1} انجام شد` : `علامت زدن قدم ${i + 1}`}
+                className={cx('mt-0.5 grid size-8 shrink-0 place-items-center rounded-full border text-xs transition-colors', on ? 'border-ok bg-ok text-black' : 'border-edge text-zinc-500 hover:border-zinc-400')}
+              >
+                {on ? <Check className="size-3.5" /> : fa(i + 1)}
+              </button>
+              <div className={cx('flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2 text-sm leading-7', on && 'text-zinc-500 line-through decoration-zinc-600')}>
+                <span>{text}</span>{extra}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {finished && <p className="mt-3 text-sm text-ok">تمام شد. وضعیت اتصال رو از داشبورد ببین.</p>}
+    </Card>
   );
 }
 
@@ -243,7 +427,7 @@ PersistentKeepalive = 25
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
       <Card className="min-w-0 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2.5 text-[15px] font-black"><KeyRound className="size-4 text-brand2" /> کانفیگ WireGuard</h3>
@@ -269,7 +453,7 @@ PersistentKeepalive = 25
             {[['Endpoint', WG.endpoint], ['AllowedIPs', WG.allowed], ['Public Key', WG.serverKey], ['Address', `${me.ip}/32`]].map(([label, v]) => (
               <div key={label} className="flex items-center gap-2 well py-1 ps-3 pe-1">
                 <div className="min-w-0 flex-1">
-                  <Mono className="block text-[10px] text-zinc-500">{label}</Mono>
+                  <Mono className="block text-[11px] text-zinc-500">{label}</Mono>
                   <Mono className="block truncate text-xs font-bold">{v}</Mono>
                 </div>
                 <CopyBtn text={v} />
@@ -288,6 +472,8 @@ PersistentKeepalive = 25
           </div>
         </Card>
       </div>
+
+      <SetupGuide onDownload={download} onQr={() => setQr(true)} />
 
       <Modal open={qr} onClose={() => setQr(false)} title="اسکن با اپ WireGuard" icon={QrCode}>
         <QR text={conf} />
@@ -346,7 +532,7 @@ function SmartDns() {
   const already = detected.ip && s.dnsIps.some((x) => x.ip === detected.ip);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card red className="p-5 sm:p-6">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Globe className="size-4 text-brand2" /> ثبت آی‌پی برای DNS</h3>
         <p className="mt-2 text-xs leading-6 text-silver">DNS دوپینگ فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. هر بار آی‌پی اینترنتت عوض شد، همین دکمه رو بزن.</p>
@@ -370,11 +556,11 @@ function SmartDns() {
       <div className="flex min-w-0 flex-col gap-4">
         <Card className="p-5">
           <h3 className="font-black">آدرس‌های DNS</h3>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {[['Primary DNS', DNS.primary], ['Secondary DNS', DNS.secondary]].map(([l, v]) => (
               <div key={l} className="flex items-center gap-2 well py-1.5 ps-3 pe-1.5">
                 <div className="min-w-0 flex-1">
-                  <Mono className="block text-[10px] text-zinc-500">{l}</Mono>
+                  <Mono className="block text-[11px] text-zinc-500">{l}</Mono>
                   <Mono className="block text-base font-black">{v}</Mono>
                 </div>
                 <CopyBtn text={v} />
@@ -432,7 +618,7 @@ function Vip() {
     ['skins', 'اسکین و چاقو (!ws / !knife)', 'انتخاب اسکین دلخواه روی سرورهای دوپینگ.'],
   ];
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card className="p-5 sm:p-6">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Link2 className="size-4 text-brand2" /> اتصال اکانت Steam</h3>
         <p className="mt-2 text-xs leading-6 text-silver">امتیازهای VIP با SteamID64 شناخته می‌شن. آیدی ۱۷ رقمیت رو از پروفایل Steam یا سایت <Mono>steamid.io</Mono> بردار.</p>
@@ -506,7 +692,7 @@ function Billing() {
     }, 1400);
   };
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <Card red className="flex flex-col p-5 sm:p-6">
         <div className="flex items-center gap-2 text-xs text-silver"><Wallet className="size-4" /> موجودی کیف پول</div>
         <div className="mt-2 flex flex-wrap items-baseline gap-2">
@@ -517,8 +703,8 @@ function Billing() {
       </Card>
       <Card className="min-w-0 p-5">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Receipt className="size-4 text-brand2" /> تاریخچه فاکتورها</h3>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
+        <div className="max-md:p-2 mt-3 overflow-x-auto">
+          <table className="rtable w-full md:min-w-[520px] text-sm">
             <thead className="text-xs text-silver">
               <tr className="border-b border-white/8 text-start">
                 {['شماره', 'شرح', 'مبلغ', 'درگاه', 'وضعیت'].map((h) => <th key={h} className="px-2 py-2 text-start font-bold">{h}</th>)}
@@ -527,11 +713,11 @@ function Billing() {
             <tbody>
               {s.invoices.map((i) => (
                 <tr key={i.id + i.at} className="border-b border-white/5">
-                  <td className="px-2 py-2.5"><Mono className="text-xs">{i.id}</Mono></td>
-                  <td className="px-2 py-2.5"><div className="font-bold">{i.title}</div><div className="text-[11px] text-zinc-500">{faDate(i.at)}</div></td>
-                  <td className="px-2 py-2.5 whitespace-nowrap">{toman(i.amount)}</td>
-                  <td className="px-2 py-2.5 text-xs text-silver">{i.gateway}</td>
-                  <td className="px-2 py-2.5"><Badge tone={i.status === 'paid' ? 'ok' : 'bad'}>{i.status === 'paid' ? 'پرداخت شده' : 'ناموفق'}</Badge></td>
+                  <td data-label="شماره" className="px-2 py-2.5"><Mono className="text-xs">{i.id}</Mono></td>
+                  <td data-head="1" className="px-2 py-2.5"><div className="font-bold">{i.title}</div><div className="text-[11px] text-zinc-500">{faDate(i.at)}</div></td>
+                  <td data-label="مبلغ" className="px-2 py-2.5 whitespace-nowrap">{toman(i.amount)}</td>
+                  <td data-label="درگاه" className="px-2 py-2.5 text-xs text-silver">{i.gateway}</td>
+                  <td data-label="وضعیت" className="px-2 py-2.5"><Badge tone={i.status === 'paid' ? 'ok' : 'bad'}>{i.status === 'paid' ? 'پرداخت شده' : 'ناموفق'}</Badge></td>
                 </tr>
               ))}
             </tbody>
@@ -553,7 +739,7 @@ function Billing() {
           <input id="topup-amount" dir="ltr" inputMode="numeric" value={amount || ''} onChange={(e) => setAmount(Number(e.target.value.replace(/\D/g, '')))} className="field mono" />
         </Field>
         <div className="mt-4 text-xs font-bold text-silver">درگاه پرداخت</div>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {gws.map((g) => (
             <button key={g.id} type="button" onClick={() => setGw(g.id)} aria-pressed={gw === g.id} className={cx('relative rounded-2xl p-3 text-start transition', gw === g.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
               <span className="block text-sm font-bold">{g.name}</span>
@@ -594,7 +780,7 @@ function Tickets() {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
       <Card className="p-5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-2.5 text-[15px] font-black"><LifeBuoy className="size-4 text-brand2" /> تیکت‌های پشتیبانی</h3>
@@ -672,7 +858,9 @@ const TABS = [
 
 export default function UserPanel() {
   const { s, me } = useStore();
-  const [tab, setTab] = useState('dash');
+  const { set } = useStore();
+  const [tab, setTab] = useState(() => s.panelTab ?? 'dash');
+  useEffect(() => { if (s.panelTab) set({ panelTab: null }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const Current = TABS.find((t) => t.id === tab).C;
   return (
     <div className="gutter mx-auto max-w-6xl pt-10">

@@ -35,11 +35,11 @@ const GLYPHS = [
  * <DopingLogo /> full lockup · <DopingLogo variant="mark" /> the D alone.
  * Size it with a height class (e.g. className="h-8"); width follows the viewBox.
  */
-export default function DopingLogo({ variant = 'full', className = 'h-8', title = 'Doping' }) {
+export default function DopingLogo({ variant = 'full', className = 'h-8', title = 'Doping', ...rest }) {
   const id = useId();
   if (variant === 'mark') {
     return (
-      <svg viewBox="0 0 640 410" className={className} role="img" aria-label={title} style={{ direction: 'ltr' }}>
+      <svg viewBox="0 0 640 410" className={className} role={title ? 'img' : undefined} aria-label={title || undefined} aria-hidden={title ? undefined : true} style={{ direction: 'ltr' }} {...rest}>
         <Mark maskId={`${id}m`} />
       </svg>
     );

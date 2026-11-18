@@ -126,7 +126,7 @@ export default function Blueprint() {
       </Card>
 
       <h3 className="mt-14 text-xl font-black">دفاع در عمق</h3>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {DEFENSE.map((d) => (
           <button key={d.title} type="button" onClick={() => open(d.file)} className="glass group relative p-5 text-start transition-colors hover:border-edge">
             <div className="flex items-center gap-2.5 text-[15px] font-black"><d.icon className="size-4 text-brand2" />{d.title}</div>
@@ -136,7 +136,7 @@ export default function Blueprint() {
         ))}
       </div>
 
-      <div id="code" className="mt-8 grid scroll-mt-32 gap-4 lg:grid-cols-[280px_1fr]">
+      <div id="code" className="mt-8 grid scroll-mt-32 grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         <Card as="nav" className="p-3 lg:sticky lg:top-28 lg:self-start" aria-label="فایل‌های بک‌اند">
           {groups.map((g) => (
             <div key={g} className="mb-2">

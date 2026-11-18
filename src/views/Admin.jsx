@@ -7,7 +7,7 @@ import { useStore } from '../store.jsx';
 import Settings from './Settings.jsx';
 import { ArcMeter, ModeEmblem, RouteMap } from '../art.jsx';
 import { Badge, Btn, Card, cx, Dot, Drawer, Field, Modal, Mono, Progress, RailLayout, Stat, Toggle } from '../ui.jsx';
-import { clock, CS2_MAPS, daysLeft, fa, GB, gb, isIPv4, MODES, PLAN_NAME, rint, roster, tierLabel, TIERS, toman, uid } from '../data.js';
+import { clock, CS2_MAPS, daysLeft, dnsSlots, durations, fa, GB, gb, isIPv4, MODES, pingTiers, priceOf, rint, roster, tierLabel, toman, uid } from '../data.js';
 
 const U_STATUS = { active: ['Active', 'ok'], quota: ['Quota Exceeded', 'bad'], expired: ['Expired', 'warn'], disabled: ['Disabled', 'mute'] };
 
@@ -53,7 +53,7 @@ function RouterForm({ initial, onClose }) {
       open onClose={onClose} wide title={editing ? `ویرایش ${initial.name}` : 'افزودن روتر میکروتیک'}
       footer={<><Btn variant="ghost" onClick={onClose}>انصراف</Btn><Btn onClick={save}>{editing ? 'ذخیره تغییرات' : 'افزودن روتر'}</Btn></>}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="نام نود" error={e('name')}><input id="rt-name" dir="ltr" value={f.name} onChange={up('name')} placeholder="THR-EDGE-03" className="field mono" /></Field>
         <Field label="نقش">
           <select id="rt-role" value={f.role} onChange={up('role')} className="field">
@@ -154,7 +154,7 @@ function Routers() {
               <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 {[['IP', r.host], ['API Port', r.apiPort], ['RouterOS', `v${r.version}`], ['Interface', r.wg], ['Subnet', r.subnet], ['Model', r.model]].map(([k, v]) => (
                   <div key={k} className="min-w-0">
-                    <dt><Mono className="text-[10px] text-zinc-500">{k}</Mono></dt>
+                    <dt><Mono className="text-[11px] text-zinc-500">{k}</Mono></dt>
                     <dd><Mono className="block truncate font-bold">{v}</Mono></dd>
                   </div>
                 ))}
@@ -167,13 +167,13 @@ function Routers() {
                 {[['WG Peers', r.peers], ['Queues', r.queues], ['Handshake', on ? `${r.handshake}s` : '—']].map(([k, v]) => (
                   <div key={k} className="well py-2">
                     <Mono className={cx('block text-sm font-black', k === 'Handshake' && on && (r.handshake < 120 ? 'text-ok' : 'text-warn'))}>{v}</Mono>
-                    <Mono className="text-[10px] text-silver">{k}</Mono>
+                    <Mono className="text-[11px] text-silver">{k}</Mono>
                   </div>
                 ))}
               </div>
               <div className="text-[11px] text-zinc-500">آخرین سینک: <Mono>{r.lastSync ? clock(r.lastSync) : 'never'}</Mono></div>
-              <div className="mt-auto flex gap-2">
-                <Btn size="sm" icon={RefreshCw} className="flex-1" onClick={() => setSync(r)}>تست اتصال و سینک میکروتیک</Btn>
+              <div className="mt-auto flex flex-wrap gap-2">
+                <Btn size="sm" icon={RefreshCw} className="w-full min-[360px]:w-auto min-[360px]:flex-1" onClick={() => setSync(r)}>تست اتصال و سینک میکروتیک</Btn>
                 <Btn size="sm" variant="ghost" icon={Pencil} aria-label={`ویرایش ${r.name}`} onClick={() => setForm(r)} />
                 <Btn
                   size="sm" variant="ghost" icon={Power} aria-label={on ? 'شبیه‌سازی قطعی' : 'برگرداندن به مدار'} title={on ? 'شبیه‌سازی قطعی نود' : 'برگرداندن به مدار'}
@@ -277,8 +277,8 @@ function UsersTable() {
         </div>
       </div>
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+        <div className="max-md:p-2 overflow-x-auto">
+          <table className="rtable w-full md:min-w-[980px] text-sm">
             <thead className="text-[11px] text-zinc-500">
               <tr>{['کاربر', 'MikroTik IP', 'مصرف Simple Queue (bytes-in / bytes-out)', 'انقضا', 'وضعیت', 'عملیات'].map((h) => <th key={h} className="px-3 py-3 text-start font-bold whitespace-nowrap">{h}</th>)}</tr>
             </thead>
@@ -289,17 +289,17 @@ function UsersTable() {
                 const [label, tone] = U_STATUS[u.status];
                 return (
                   <tr key={u.id} className="border-t border-white/5 hover:bg-white/[0.02]">
-                    <td className="px-3 py-2.5">
+                    <td data-head="1" className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <span className={cx('size-2 shrink-0 rounded-full', u.online ? 'bg-ok' : 'bg-zinc-600')} title={u.online ? 'آنلاین' : 'آفلاین'} />
                         <div className="min-w-0">
                           <Mono className="block font-bold">{u.username}</Mono>
-                          <span className="text-[11px] text-zinc-500">{PLAN_NAME[u.plan]}</span>
+                          <span className="text-[11px] text-zinc-500">{s.site.planNames[u.plan]}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5"><Mono className="text-xs">{u.ip}/32</Mono></td>
-                    <td className="px-3 py-2.5">
+                    <td data-label="آی‌پی تانل" className="px-3 py-2.5"><Mono className="text-xs">{u.ip}/32</Mono></td>
+                    <td data-label="مصرف" className="px-3 py-2.5">
                       {u.plan === 'dns' ? <span className="text-xs text-zinc-500">فقط DNS · بدون صف</span> : (
                         <div className="w-56">
                           <div className="mb-1 flex justify-between text-[11px]">
@@ -310,9 +310,9 @@ function UsersTable() {
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">{daysLeft(u.expires) ? `${fa(daysLeft(u.expires))} روز` : <span className="text-warn">تمام شده</span>}</td>
-                    <td className="px-3 py-2.5"><Badge tone={tone}><Mono>{label}</Mono></Badge></td>
-                    <td className="px-3 py-2.5">
+                    <td data-label="انقضا" className="px-3 py-2.5 text-xs whitespace-nowrap">{daysLeft(u.expires) ? `${fa(daysLeft(u.expires))} روز` : <span className="text-warn">تمام شده</span>}</td>
+                    <td data-label="وضعیت" className="px-3 py-2.5"><Badge tone={tone}><Mono>{label}</Mono></Badge></td>
+                    <td data-label="عملیات" className="px-3 py-2.5">
                       <div className="flex items-center gap-1.5">
                         <Btn size="sm" variant="ok" icon={Plus} onClick={() => act.add(u)} title="Add Traffic"><Mono>5GB</Mono></Btn>
                         <Btn size="sm" variant="ghost" icon={RotateCcw} onClick={() => act.reset(u)} aria-label="Reset Queue Counters" title="Reset Queue Counters" />
@@ -405,7 +405,7 @@ function Rcon({ id, onClose }) {
     <Drawer open onClose={onClose} title={`RCON · ${v.name}`}>
       <div className="grid grid-cols-3 gap-2 text-center">
         {[['Map', v.map], ['Players', `${v.players}/${v.max}`], ['Ping', `${v.ping}ms`]].map(([k, val]) => (
-          <div key={k} className="well py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[10px] text-silver">{k}</Mono></div>
+          <div key={k} className="well py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[11px] text-silver">{k}</Mono></div>
         ))}
       </div>
 
@@ -481,7 +481,7 @@ function ServerForm({ initial, onClose }) {
   };
   return (
     <Modal open onClose={onClose} wide title={editing ? 'ویرایش سرور بازی' : 'افزودن سرور بازی'} footer={<><Btn variant="ghost" onClick={onClose}>انصراف</Btn><Btn onClick={save}>{editing ? 'ذخیره' : 'افزودن سرور'}</Btn></>}>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="نام سرور" error={e('name')} className="sm:col-span-2"><input id="gs-name" dir="ltr" value={f.name} onChange={up('name')} placeholder="Doping Retake #3" className="field mono" /></Field>
         <Field label="نوع">
           <select id="gs-mode" value={f.mode} onChange={up('mode')} className="field">{MODES.filter((m) => m.id !== 'all').map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
@@ -507,21 +507,21 @@ function GameServers() {
         <Btn icon={Plus} onClick={() => setForm({})}>افزودن سرور</Btn>
       </div>
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-sm">
+        <div className="max-md:p-2 overflow-x-auto">
+          <table className="rtable w-full md:min-w-[860px] text-sm">
             <thead className="text-[11px] text-zinc-500">
               <tr>{['سرور', 'آدرس', 'مپ', 'بازیکن', 'پینگ', 'وضعیت', 'عملیات'].map((h) => <th key={h} className="px-3 py-3 text-start font-bold">{h}</th>)}</tr>
             </thead>
             <tbody>
               {s.servers.map((v) => (
                 <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.02]">
-                  <td className="px-3 py-2.5"><div className="flex items-center gap-3"><ModeEmblem mode={v.mode} vip={v.vip} className="size-9 shrink-0" /><div className="min-w-0"><Mono className="block font-bold">{v.name}</Mono><Mono className="text-[11px] text-zinc-500">{v.game} · {v.tick}</Mono></div></div></td>
-                  <td className="px-3 py-2.5"><Mono className="text-xs">{v.host}:{v.port}</Mono></td>
-                  <td className="px-3 py-2.5"><Mono className="text-xs font-bold">{v.map}</Mono></td>
-                  <td className="px-3 py-2.5"><div className="w-28"><Mono className="text-xs">{v.players}/{v.max}</Mono><Progress value={(v.players / v.max) * 100} h="h-1.5" className="mt-1" /></div></td>
-                  <td className="px-3 py-2.5"><Mono className="text-xs text-ok">{v.status === 'online' ? `${v.ping}ms` : '—'}</Mono></td>
-                  <td className="px-3 py-2.5"><Badge tone={v.status === 'online' ? 'ok' : 'bad'}>{v.status === 'online' ? 'Online' : 'Stopped'}</Badge></td>
-                  <td className="px-3 py-2.5">
+                  <td data-head="1" className="px-3 py-2.5"><div className="flex items-center gap-3"><ModeEmblem mode={v.mode} vip={v.vip} className="size-9 shrink-0" /><div className="min-w-0"><Mono className="block font-bold">{v.name}</Mono><Mono className="text-[11px] text-zinc-500">{v.game} · {v.tick}</Mono></div></div></td>
+                  <td data-label="آدرس" className="px-3 py-2.5"><Mono className="text-xs">{v.host}:{v.port}</Mono></td>
+                  <td data-label="مپ" className="px-3 py-2.5"><Mono className="text-xs font-bold">{v.map}</Mono></td>
+                  <td data-label="بازیکن" className="px-3 py-2.5"><div className="w-28"><Mono className="text-xs">{v.players}/{v.max}</Mono><Progress value={(v.players / v.max) * 100} h="h-1.5" className="mt-1" /></div></td>
+                  <td data-label="پینگ" className="px-3 py-2.5"><Mono className="text-xs text-ok">{v.status === 'online' ? `${v.ping}ms` : '—'}</Mono></td>
+                  <td data-label="وضعیت" className="px-3 py-2.5"><Badge tone={v.status === 'online' ? 'ok' : 'bad'}>{v.status === 'online' ? 'Online' : 'Stopped'}</Badge></td>
+                  <td data-label="عملیات" className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
                       <Btn size="sm" icon={Terminal} disabled={v.status !== 'online'} onClick={() => setRcon(v.id)}>RCON</Btn>
                       <Btn size="sm" variant="ghost" icon={Pencil} aria-label="ویرایش" onClick={() => setForm(v)} />
@@ -555,11 +555,11 @@ function NumInput({ id, value, onChange, suffix }) {
   );
 }
 
-function Sales() {
+function Sales({ open }) {
   const { s, set, toast, log } = useStore();
+  const P = s.site.pricing;
   const [code, setCode] = useState({ code: '', percent: 10, max: 100 });
   const [err, setErr] = useState('');
-  const setP = (fn) => set((p) => ({ pricing: fn(p.pricing) }));
   const paid = s.invoices.filter((i) => i.status === 'paid');
   const addCode = () => {
     const c = code.code.trim().toUpperCase();
@@ -573,24 +573,32 @@ function Sales() {
     toast('کد تخفیف ساخته شد.');
   };
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card className="p-5 lg:col-span-2">
-        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Banknote className="size-4 text-brand2" /> قیمت پلن‌ها (تومان · ماهانه)</h3>
-        <p className="mt-1 text-xs text-silver">هر تغییری همین حالا توی فروشگاه اعمال می‌شه.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {TIERS.map((t) => (
-            <Field key={t} label={`کاهش پینگ · ${tierLabel(t)}`}><NumInput id={`pr-${t}`} value={s.pricing.ping[t]} onChange={(v) => setP((x) => ({ ...x, ping: { ...x.ping, [t]: v } }))} /></Field>
-          ))}
-          {Object.keys(s.pricing.dns).map((k) => (
-            <Field key={k} label={`DNS · ${fa(k)} آی‌پی`}><NumInput id={`pr-dns-${k}`} value={s.pricing.dns[k]} onChange={(v) => setP((x) => ({ ...x, dns: { ...x.dns, [k]: v } }))} /></Field>
-          ))}
-          <Field label="هر گیگ ترافیک مازاد"><NumInput id="pr-extra" value={s.pricing.extraPerGb} onChange={(v) => setP((x) => ({ ...x, extraPerGb: v }))} /></Field>
-          <Field label="تخفیف ۳ ماهه"><NumInput id="pr-d3" value={s.pricing.dur[3]} suffix="%" onChange={(v) => setP((x) => ({ ...x, dur: { ...x.dur, 3: Math.min(90, v) } }))} /></Field>
-          <Field label="تخفیف ۶ ماهه"><NumInput id="pr-d6" value={s.pricing.dur[6]} suffix="%" onChange={(v) => setP((x) => ({ ...x, dur: { ...x.dur, 6: Math.min(90, v) } }))} /></Field>
-          <Field label="ضریب پکیج پرو" hint="نسبت به کاهش پینگ">
-            <input id="pr-pro" dir="ltr" type="number" step="0.05" min="1" max="3" value={s.pricing.proMul} onChange={(e) => setP((x) => ({ ...x, proMul: Math.max(1, Math.min(3, +e.target.value || 1)) }))} className="field mono text-left" />
-          </Field>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Banknote className="size-4 text-brand2" /> قیمت پلن‌ها (تومان · ماهانه)</h3>
+            <p className="mt-1 text-xs text-silver">قیمت‌ها، حجم‌ها، مدت‌ها و تخفیف‌ها در تنظیمات سایت ویرایش می‌شن.</p>
+          </div>
+          <Btn size="sm" icon={Pencil} onClick={() => open?.('settings', 'plans')}>ویرایش قیمت‌ها و پلن‌ها</Btn>
         </div>
+        <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line text-sm sm:grid-cols-3 lg:grid-cols-5">
+          {pingTiers(P).map((t) => (
+            <div key={t} className="bg-card px-4 py-3">
+              <dt className="text-xs text-zinc-500">{s.site.planNames.ping} · {tierLabel(t)}</dt>
+              <dd className="mt-0.5 font-bold">{toman(priceOf(P, { kind: 'ping', tier: t, months: 1 }).total)}</dd>
+            </div>
+          ))}
+          {dnsSlots(P).map((n) => (
+            <div key={`d${n}`} className="bg-card px-4 py-3">
+              <dt className="text-xs text-zinc-500">{s.site.planNames.dns} · {fa(n)} آی‌پی</dt>
+              <dd className="mt-0.5 font-bold">{toman(priceOf(P, { kind: 'dns', slots: n, months: 1 }).total)}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-3 text-xs text-zinc-500">
+          {durations(P).filter((d) => d.off).map((d) => `${fa(d.months)} ماهه ${fa(d.off)}٪ تخفیف`).join(' · ') || 'بدون تخفیف مدت'} · {s.site.planNames.pro} {fa(Math.round((P.proMul - 1) * 100))}٪ گران‌تر · هر گیگ مازاد {toman(P.extraPerGb)}
+        </p>
       </Card>
 
       <Card className="p-5">
@@ -683,17 +691,17 @@ function Logs() {
           <span className="flex items-center gap-2">{frozen ? <Pause className="size-3.5 text-warn" /> : <Dot />}{frozen ? 'متوقف شده' : 'زنده'} · {fa(rows.length)} رویداد</span>
           <span>append-only · بدون امکان ویرایش یا حذف</span>
         </div>
-        <div className="max-h-[560px] overflow-auto">
-          <table className="w-full min-w-[820px] text-xs">
+        <div className="max-md:p-2 max-h-[560px] overflow-auto">
+          <table className="rtable w-full md:min-w-[820px] text-xs">
             <tbody>
               {rows.map((l) => (
                 <tr key={l.id} className={cx('border-t border-white/5', l.level === 'critical' && 'bg-red-500/[0.06]')}>
-                  <td className="px-3 py-2 whitespace-nowrap"><Mono className="text-zinc-500">{clock(l.at)}</Mono></td>
-                  <td className="px-2 py-2"><Badge tone={L_TONE[l.level]}><Mono>{l.level}</Mono></Badge></td>
-                  <td className="px-2 py-2"><Mono className="text-brand2">{l.type}</Mono></td>
-                  <td className="w-full px-2 py-2"><span dir="auto" className="mono block text-zinc-200" style={{ unicodeBidi: 'plaintext' }}>{l.msg}</span></td>
-                  <td className="px-2 py-2 whitespace-nowrap"><Mono className="text-silver">{l.actor}</Mono></td>
-                  <td className="px-3 py-2 whitespace-nowrap"><Mono className="text-zinc-500">{l.ip}</Mono></td>
+                  <td data-label="زمان" className="px-3 py-2 whitespace-nowrap"><Mono className="text-zinc-500">{clock(l.at)}</Mono></td>
+                  <td data-label="سطح" className="px-2 py-2"><Badge tone={L_TONE[l.level]}><Mono>{l.level}</Mono></Badge></td>
+                  <td data-label="نوع" className="px-2 py-2"><Mono className="text-brand2">{l.type}</Mono></td>
+                  <td data-head="1" className="w-full px-2 py-2"><span dir="auto" className="mono block text-zinc-200" style={{ unicodeBidi: 'plaintext' }}>{l.msg}</span></td>
+                  <td data-label="کاربر" className="px-2 py-2 whitespace-nowrap"><Mono className="text-silver">{l.actor}</Mono></td>
+                  <td data-label="آی‌پی" className="px-3 py-2 whitespace-nowrap"><Mono className="text-zinc-500">{l.ip}</Mono></td>
                 </tr>
               ))}
               {!rows.length && <tr><td className="px-3 py-10 text-center text-sm text-silver">رویدادی با این فیلتر ثبت نشده.</td></tr>}
@@ -710,6 +718,8 @@ function Logs() {
 export default function Admin() {
   const { s } = useStore();
   const [tab, setTab] = useState('routers');
+  const [sub, setSub] = useState(null);
+  const open = (t, inner = null) => { setTab(t); setSub(inner); window.scrollTo({ top: 0 }); };
   const online = s.users.filter((u) => u.online).length;
   const peers = s.routers.filter((r) => r.role === 'entry').reduce((a, r) => a + r.peers, 0);
   const alerts = s.logs.filter((l) => l.level === 'critical').length + s.routers.filter((r) => r.status !== 'online').length;
@@ -737,7 +747,7 @@ export default function Admin() {
         <Stat label="بیشترین بار CPU" value={<Mono>{Math.max(...s.routers.map((r) => r.cpu))}%</Mono>} tone={Math.max(...s.routers.map((r) => r.cpu)) > 80 ? 'text-brand2' : 'text-white'} />
         <Stat label="بازیکن روی سرورها" value={<Mono>{s.servers.reduce((a, v) => a + v.players, 0)}</Mono>} />
       </div>
-      <RailLayout tabs={TABS} value={tab} onChange={setTab}><Current /></RailLayout>
+      <RailLayout tabs={TABS} value={tab} onChange={(t) => open(t)}><Current key={`${tab}-${sub}`} open={open} sub={sub} /></RailLayout>
     </div>
   );
 }
