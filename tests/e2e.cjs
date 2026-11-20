@@ -3,7 +3,8 @@
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const URL = 'file://' + path.resolve(__dirname, '../dist/index.html');
+// BASE_URL=http://localhost:8080/ runs the same checks against a deployed or containerised build.
+const URL = process.env.BASE_URL || 'file://' + path.resolve(__dirname, '../dist/index.html');
 const failures = [];
 let passed = 0;
 const check = (name, ok, detail = '') => { if (ok) passed++; else failures.push(`${name}${detail ? ` → ${detail}` : ''}`); };
