@@ -1,4 +1,7 @@
 node_modules
+.next
+out
 dist
-.env*
-*.log
+*.tsbuildinfo
+.env
+.env.local

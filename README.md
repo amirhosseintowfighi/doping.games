@@ -1,56 +1,54 @@
 # Doping — doping.games
 
-Persian (RTL) gaming-network platform: ping-reduction tunnel on MikroTik RouterOS v7, anti-sanction DNS with IP whitelisting, and a CS2 game-server hub.
+Persian (RTL) gaming-network platform: a ping-reduction tunnel on MikroTik RouterOS v7 + WireGuard, an anti-sanction DNS with per-account IP whitelisting, and a CS2 game-server hub. One Next.js app serves the site, the gamer panel, the admin console, the API and the background workers; PostgreSQL holds everything.
 
-## Run
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| App | Next.js 16 (App Router, server rendering, route handlers), React 19, TypeScript on the server |
+| UI | Tailwind CSS 4, lucide icons, self-hosted Vazirmatn via `next/font` |
+| Data | PostgreSQL 16, Drizzle ORM + SQL migrations in `drizzle/` (applied automatically on start) |
+| Auth | Email/username + password (scrypt), database sessions in an HttpOnly cookie, per-session CSRF token, roles `user` / `support` / `admin` |
+| Secrets | AES-256-GCM envelopes with a rotatable key ring (`DOPING_KMS_KEYS`), bound to their row: router API passwords, RCON passwords, WireGuard private + preshared keys |
+| Payments | Zarinpal REST v4 (live / sandbox), built-in test gateway when no merchant id is set, wallet, discount codes; idempotent verify |
+| Routers | RouterOS v7 REST over HTTPS with certificate fingerprint pinning: WireGuard peers, Simple Queues, firewall address-lists |
+| Game servers | Valve A2S (UDP) for live players/map/ping, Source RCON (TCP) with a command allow-list |
+| Workers | Quota worker (queue counters → usage, suspends at quota/expiry), A2S poller, stale-order cleanup; one instance at a time via a Postgres advisory lock |
+
+## Run locally
 
 ```bash
 npm install
-npm run dev                 # http://localhost:5173
-npm run build               # production build in dist/
-SINGLE=1 npm run build      # one self-contained dist/index.html
-npm run typecheck:backend   # tsc --strict over backend/
-npm test                    # builds, then runs the browser end-to-end test (needs Playwright + Chromium)
+cp .env.example .env.local      # set DATABASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD (KMS keys optional in dev)
+npm run dev                     # http://localhost:3000 — migrations run on start
 ```
 
-Deploying with Docker / on a PaaS: [`docs/deploy.md`](docs/deploy.md).
+`docker compose up -d --build` runs the production stack (app + PostgreSQL). Deployment guide (Persian): [`docs/deploy.md`](docs/deploy.md).
 
-Benchmark results and method: [`docs/benchmark.md`](docs/benchmark.md).
+## Tests
+
+```bash
+npm run typecheck
+npm test                        # unit tests (node:test): crypto, address pool, quota rules, A2S/RCON parsing, pricing
+npm run build && npm start      # then, in another shell:
+npm run test:e2e                # browser + API end-to-end against fake RouterOS and CS2 servers (tests/mocks)
+```
+
+The end-to-end suite (72 checks) signs up, buys a plan through the test gateway, adds a router in the admin and syncs it, checks that peers/queues/address-list entries appear on the (fake) router, pushes traffic past the quota and waits for the worker to suspend the peer, tops up the wallet, buys extra traffic, resets keys, opens and answers a ticket, adds a game server and reads it over A2S, runs RCON commands, and checks CSRF, Origin, role and price-tampering protections.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `src/Logo.jsx` | `<DopingLogo />` inline SVG (full lockup or `variant="mark"`) |
-| `src/art.jsx` | Vector pieces: original `GameCover` artwork, `Ring` quota gauge, `RouteMap` cluster diagram, `ModeEmblem`, `ArcMeter` |
-| `src/index.css`, `src/ui.jsx` | Design system: near-black, flat bordered cards, one accent (crimson) for the primary action only |
-| `src/views/HeroScene.jsx` | Interactive hero route scene (SVG): you → Tehran edge → exit → game server, clickable exits, game picker, ordinary-route comparison with hops and packet loss |
-| `src/views/Storefront.jsx` | Hero + ping simulator, live game-server hub, plan builder + checkout |
-| `src/views/UserPanel.jsx` | Quota telemetry, WireGuard config/QR/key reset, DNS whitelist, Steam VIP, wallet, tickets |
-| `src/views/Admin.jsx` | Router cluster + sync, users/quota table, game servers + RCON console, pricing/discounts/gateways, audit log |
-| `src/covers.js`, `src/assets/covers/` | Official game artwork (400×600 WebP), cover lookup, and the in-browser resize used for uploaded covers |
-| `src/motion.jsx` | Motion layer: scroll / pointer parallax (`data-depth` layers), 3D cover tilt, cursor spotlight on cards, count-up numbers, scroll progress, back-to-top. Off for `prefers-reduced-motion` and when «افکت‌های حرکتی» is off in settings |
-| `src/views/Settings.jsx` | Admin → «تنظیمات سایت»: edit hero text, stats, sections, covered games, FAQ, plan features, DNS / WireGuard values, brand colour, footer |
-| `src/views/Blueprint.jsx` | Architecture tab; renders the real files from `backend/` |
-| `src/store.jsx`, `src/data.js` | In-browser simulation layer (seed data, live tick, quota enforcement) |
-| `backend/` | Next.js App Router backend sources: MikroTik REST service, quota worker, AES-256-GCM, rate limit, RBAC/CSRF guard, Zod schemas, idempotent Zarinpal callback, PostgreSQL schema, RouterOS baseline script |
-
-## What is simulated
-
-Site settings are saved in the browser's `localStorage` (key `doping.site.v1`), so they persist per device, not per account.
-
-The UI runs entirely on the simulation layer in `src/store.jsx`: no router, payment gateway or game server is contacted.
-Public IPs in `src/data.js` are documentation ranges (RFC 5737) and hostnames are placeholders; replace them with real nodes.
-
-The `backend/` code type-checks under `tsc --strict` but has not been run against a live RouterOS device, PostgreSQL, Redis or Zarinpal.
-To go live it needs a Next.js app around it (`@/` alias → `backend/`), `DATABASE_URL`, `REDIS_URL`, `APP_ORIGIN`,
-`ZARINPAL_MERCHANT_ID`, `DOPING_KMS_KEYS` / `DOPING_KMS_ACTIVE`, and the frontend wired to the API routes in place of the store.
-
-## Game artwork
-
-The covers in `src/assets/covers/` belong to their publishers and are used only to show which games the service supports.
-
-- Steam library capsules (Valve, EA, Activision, Electronic Arts / Respawn, KRAFTON, Facepunch): Counter-Strike 2, Dota 2, EA SPORTS FC 26, Call of Duty: Warzone, Apex Legends, PUBG: BATTLEGROUNDS, Rust.
-- VALORANT, Fortnite and Minecraft are not on Steam; their tiles are the official logos (via Wikimedia Commons) on a dark background.
-
-Check each publisher's brand and fan-content guidelines before production use. Covers can be replaced per game from Admin → «تنظیمات سایت».
+| `app/` | Pages (`/`, `/login`, `/register`, `/panel`, `/admin`, `/pay/*`) and API route handlers under `app/api/` |
+| `lib/server/schema.ts` | Database schema (Drizzle) |
+| `lib/server/auth.ts`, `http.ts`, `rateLimit.ts` | Sessions, CSRF, roles, Origin check, rate limits, JSON errors |
+| `lib/server/orders.ts`, `zarinpal.ts` | Quotes, checkout, gateway callback, fulfilment |
+| `lib/server/vpn.ts`, `mikrotik.ts` | Plans → subscriptions, tunnel addresses, provisioning, key rotation, configs, DNS whitelist, quota worker |
+| `lib/server/gameq.ts` | A2S queries, A2S poller, RCON client |
+| `lib/server/site.ts` | Site content (texts, games, prices, FAQ…) stored as one validated JSON row, edited in Admin → تنظیمات سایت |
+| `lib/server/boot.ts`, `instrumentation.ts` | Migrations, first admin, background jobs |
+| `src/views/` | Client views: storefront, gamer panel, admin console, site settings editor |
+| `drizzle/` | SQL migrations |
+| `tests/` | Unit tests, e2e suite, RouterOS and game-server mocks |

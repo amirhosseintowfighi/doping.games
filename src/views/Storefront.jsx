@@ -1,12 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+'use client';
+import { useRouter } from 'next/navigation';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BadgePercent, Check, ChevronDown, Crown, MessageCircleQuestion, Play, RotateCcw, Search, ShieldCheck, Star, Wallet, X } from 'lucide-react';
 import HeroScene from './HeroScene.jsx';
 import { CountUp, useParallax } from '../motion.jsx';
-import { useStore } from '../store.jsx';
+import { api, useStore } from '../store.jsx';
 import { GameCover, ModeEmblem } from '../art.jsx';
 import { coverSet, coverSrc, coverThumb } from '../covers.js';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, SectionTitle, Tabs } from '../ui.jsx';
-import { bestPing, dnsSlots, durations, EXITS, fa, GB, ISPS, MODES, pingTiers, priceOf, recommendTier, tierLabel, toman, trackedGames } from '../data.js';
+import { bestPing, dnsSlots, durations, EXITS, fa, ISPS, MODES, pingTiers, priceOf, recommendTier, tierLabel, toman, trackedGames } from '../data.js';
+
+/** Live game-server list and network stats: rendered by the server, then refreshed every 20 seconds. */
+const Live = createContext({ servers: [], stats: { nodes: 0, online: 0 } });
+const useLive = () => useContext(Live);
+function useLiveData(servers, stats) {
+  const [live, setLive] = useState({ servers, stats });
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      api('/api/servers').then(setLive).catch(() => {});
+    }, 20_000);
+    return () => clearInterval(t);
+  }, []);
+  return live;
+}
 
 const jump = (id) => document.getElementById(id)?.scrollIntoView();
 const SAMPLES = 24;
@@ -62,6 +79,21 @@ function PingChart({ run, count }) {
   );
 }
 
+/** Real round trips from this browser to our server (HTTP, connection kept alive; the first warms it up). */
+async function measureEdge(n = 8) {
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = performance.now();
+    try {
+      await fetch(`/api/ping?i=${i}`, { method: 'HEAD', cache: 'no-store' });
+      if (i) out.push(performance.now() - t);
+    } catch { /* lost */ }
+  }
+  if (!out.length) return null;
+  out.sort((a, b) => a - b);
+  return { median: Math.round(out[Math.floor(out.length / 2)]), min: Math.round(out[0]) };
+}
+
 function PingTest() {
   const { s, set } = useStore();
   const GAMES = trackedGames(s.site);
@@ -69,6 +101,7 @@ function PingTest() {
   const isp = ISPS.find((i) => i.id === s.prefs.isp) ?? ISPS[0];
   const [seed, setSeed] = useState(7);
   const [count, setCount] = useState(SAMPLES);
+  const [edge, setEdge] = useState(null);
   const timer = useRef(null);
   const run = useMemo(() => makeRun(game, isp, s.exit, seed), [game, isp, s.exit, seed]);
   const best = Object.entries(game.via).sort((a, b) => a[1][0] - b[1][0])[0][0];
@@ -76,6 +109,7 @@ function PingTest() {
   const pref = (k, v) => set((p) => ({ prefs: { ...p.prefs, [k]: v } }));
 
   const start = () => {
+    measureEdge().then(setEdge);
     clearInterval(timer.current);
     setSeed((x) => x + 1);
     setCount(0);
@@ -143,6 +177,10 @@ function PingTest() {
         ))}
       </dl>
 
+      <p className="mt-3 text-[11px] leading-5 text-zinc-500">
+        نمودار، تخمین از روی میانگین مسیرهای ثبت‌شده‌ست.{' '}
+        {edge ? <>پینگ واقعی مرورگرت تا سرور دوپینگ: <Mono className="text-zinc-300" data-edge-rtt>{edge.median}ms</Mono> (کمترین <Mono>{edge.min}ms</Mono>).</> : 'با «تست دوباره» پینگ واقعی مرورگرت تا سرور دوپینگ هم اندازه‌گیری می‌شه.'}
+      </p>
       <Btn variant={running ? 'ghost' : 'primary'} className="mt-3 w-full" icon={RotateCcw} onClick={start} busy={running}>
         {running ? 'در حال تست…' : 'تست دوباره'}
       </Btn>
@@ -161,10 +199,11 @@ function StatValue({ raw, live }) {
 
 function Hero() {
   const { s } = useStore();
+  const L = useLive();
   const h = s.site.hero;
   const scene = useRef(null);
   useParallax(scene, { range: 180, mouse: 26 });
-  const live = { '{nodes}': s.routers.length, '{online}': s.servers.reduce((a, v) => a + v.players, 0) };
+  const live = { '{nodes}': L.stats.nodes, '{online}': L.stats.online };
   const stats = s.site.stats.map((x) => ({ ...x, live: live[x.value.trim()] }));
   return (
     <section ref={scene} className="relative isolate overflow-clip">
@@ -406,7 +445,6 @@ const SORTS = [
 ];
 
 function ServerRow({ v, open, onToggle, fav, onFav }) {
-  const { toast } = useStore();
   const addr = `${v.host}:${v.port}`;
   const full = v.players >= v.max;
   const on = v.status === 'online';
@@ -445,7 +483,6 @@ function ServerRow({ v, open, onToggle, fav, onFav }) {
           {steam ? (
             <a
               href={`steam://connect/${addr}`}
-              onClick={() => toast(full ? 'سرور پره؛ با اسلات رزرو VIP وارد می‌شی.' : 'درخواست اتصال به Steam فرستاده شد.', full ? 'warn' : 'ok')}
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-[13px] font-bold whitespace-nowrap text-black transition-colors hover:bg-zinc-200"
             >
               <Play className="size-3.5 fill-current" /> اتصال سریع <Mono className="font-normal text-zinc-600">(Steam Connect)</Mono>
@@ -462,19 +499,18 @@ function ServerRow({ v, open, onToggle, fav, onFav }) {
             <div className="overflow-hidden rounded-xl border border-line">
               <div className="flex items-center justify-between bg-ink px-4 py-2 text-xs text-zinc-500">
                 <span>جدول امتیاز زنده · <Mono>{v.map}</Mono></span>
-                <span className="flex items-center gap-1.5"><Dot /> هر ۳ ثانیه</span>
+                <span className="flex items-center gap-1.5"><Dot /> به‌روز هر ۳۰ ثانیه (A2S)</span>
               </div>
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full text-sm" dir="ltr">
-                  <thead><tr className="text-[11px] text-zinc-600"><th className="px-4 py-1.5 text-left font-normal">#</th><th className="text-left font-normal">Player</th><th className="font-normal">K</th><th className="font-normal">D</th><th className="px-4 text-right font-normal">Ping</th></tr></thead>
+                  <thead><tr className="text-[11px] text-zinc-600"><th className="px-4 py-1.5 text-left font-normal">#</th><th className="text-left font-normal">Player</th><th className="font-normal">Score</th><th className="px-4 text-right font-normal">Time</th></tr></thead>
                   <tbody>
                     {board.map((p, i) => (
-                      <tr key={p.name} className="border-t border-line">
+                      <tr key={`${p.name}-${i}`} className="border-t border-line">
                         <td className="px-4 py-1.5 text-zinc-600"><Mono>{i + 1}</Mono></td>
                         <td><Mono className="font-bold">{p.name}</Mono></td>
                         <td className="text-center"><Mono>{p.k}</Mono></td>
-                        <td className="text-center text-zinc-500"><Mono>{p.d}</Mono></td>
-                        <td className={cx('px-4 text-right', p.ping < 30 ? 'text-ok' : 'text-warn')}><Mono>{p.ping}</Mono></td>
+                        <td className="px-4 text-right text-zinc-500"><Mono>{Math.floor((p.time ?? 0) / 60)}m</Mono></td>
                       </tr>
                     ))}
                   </tbody>
@@ -492,6 +528,7 @@ function ServerRow({ v, open, onToggle, fav, onFav }) {
 
 function ServersHub() {
   const { s, set } = useStore();
+  const { servers } = useLive();
   const [mode, setMode] = useState('all');
   const [q, setQ] = useState('');
   const [onlyFree, setOnlyFree] = useState(false);
@@ -499,13 +536,13 @@ function ServersHub() {
   const [open, setOpen] = useState(null);
   const favs = s.prefs.favs;
   const score = { fill: (v) => -(v.players / v.max), ping: (v) => v.ping, free: (v) => -(v.max - v.players) };
-  const list = s.servers
+  const list = servers
     .filter((v) => mode === 'all' || (mode === 'fav' ? favs.includes(v.id) : v.mode === mode))
     .filter((v) => !onlyFree || v.players < v.max)
     .filter((v) => `${v.name} ${v.map}`.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => (favs.includes(b.id) - favs.includes(a.id)) || score[sort](a) - score[sort](b));
   const modes = [
-    ...MODES.filter((m) => m.id === 'all' || s.servers.some((v) => v.mode === m.id)),
+    ...MODES.filter((m) => m.id === 'all' || servers.some((v) => v.mode === m.id)),
     ...(favs.length ? [{ id: 'fav', label: `علاقه‌مندی‌ها (${fa(favs.length)})` }] : []),
   ];
   const toggleFav = (id) => set((p) => ({ prefs: { ...p.prefs, favs: p.prefs.favs.includes(id) ? p.prefs.favs.filter((x) => x !== id) : [...p.prefs.favs, id] } }));
@@ -531,7 +568,7 @@ function ServersHub() {
         label={s.site.text.servers.label}
         title={s.site.text.servers.title}
         desc={s.site.text.servers.desc}
-        action={<span className="flex items-center gap-2 text-xs text-zinc-400"><Dot /> {fa(s.servers.filter((v) => v.status === 'online').length)} سرور آنلاین</span>}
+        action={<span className="flex items-center gap-2 text-xs text-zinc-400"><Dot /> {fa(servers.filter((v) => v.status === 'online').length)} سرور آنلاین</span>}
       />
       <div className="mt-8 flex flex-wrap items-center gap-3">
         <Tabs tabs={modes} value={mode} onChange={setMode} />
@@ -566,68 +603,86 @@ function ServersHub() {
 
 /* ───────────────────────── Plans & checkout ───────────────────────── */
 
-const STEPS = ['انتقال به درگاه و پرداخت', 'تایید تراکنش (verify)', 'ساخت Peer و Simple Queue در میکروتیک'];
-
+/** Plan purchase: server-side quote (discount codes are checked there), then wallet or bank payment. */
 function Checkout({ order, onClose, go }) {
-  const { s, set, toast, log, invoice, patch } = useStore();
-  const gateways = s.gateways.filter((g) => g.enabled);
-  const [gw, setGw] = useState('wallet');
+  const { s, toast, api, refreshUser } = useStore();
+  const [me, setMe] = useState(null);
+  const [gw, setGw] = useState('zarinpal');
   const [code, setCode] = useState('');
-  const [applied, setApplied] = useState(null);
+  const [quoteRes, setQuote] = useState(null);
   const [codeErr, setCodeErr] = useState('');
-  const [step, setStep] = useState(-1);
-  const total = Math.round((order.total * (1 - (applied?.percent ?? 0) / 100)) / 1000) * 1000;
-  const walletShort = gw === 'wallet' && s.wallet < total;
-  const done = step >= STEPS.length;
+  const [busy, setBusy] = useState(false);
+  const [paid, setPaid] = useState(null);
+  const input = { type: 'plan', kind: order.kind, ...(order.kind === 'dns' ? { slots: order.slots } : { tier: order.tier }), months: order.months };
 
-  const applyCode = () => {
-    const d = s.discounts.find((x) => x.code === code.trim().toUpperCase());
-    if (!d) return setCodeErr('این کد وجود نداره.');
-    if (!d.active || d.used >= d.max) return setCodeErr('این کد منقضی شده یا ظرفیتش پر شده.');
-    setCodeErr('');
-    setApplied(d);
+  useEffect(() => {
+    if (!s.user) return;
+    api('/api/me').then((d) => {
+      setMe(d);
+      const ids = d.gateways.map((g) => g.id);
+      setGw(ids.includes('wallet') && d.user.wallet >= order.total ? 'wallet' : ids.includes('zarinpal') ? 'zarinpal' : ids[0]);
+    }).catch((e) => toast(e.message, 'bad'));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const total = quoteRes?.total ?? order.total;
+  const wallet = me?.user.wallet ?? s.user?.wallet ?? 0;
+  const walletShort = gw === 'wallet' && wallet < total;
+
+  const applyCode = async () => {
+    if (!code.trim()) return;
+    try {
+      setQuote(await api('/api/orders/quote', { method: 'POST', body: { ...input, code: code.trim() } }));
+      setCodeErr('');
+    } catch (e) {
+      setQuote(null);
+      setCodeErr(e.fields?.code ?? e.message);
+    }
   };
 
-  const pay = () => {
-    setStep(0);
-    const gwName = gw === 'wallet' ? 'کیف پول' : gateways.find((g) => g.id === gw).name;
-    setTimeout(() => setStep(1), 900);
-    setTimeout(() => setStep(2), 1700);
-    setTimeout(() => {
-      if (gw === 'wallet') set((p) => ({ wallet: p.wallet - total }));
-      if (applied) set((p) => ({ discounts: p.discounts.map((d) => (d.id === applied.id ? { ...d, used: d.used + 1 } : d)) }));
-      invoice(order.title, total, gwName);
-      log('payment', 'info', `${gw} verify OK · ${order.title} · ${total.toLocaleString('en-US')} T`, 'Arash_AWP', '5.160.14.92');
-      if (order.kind === 'dns') {
-        set({ dnsSlots: order.slots });
-      } else {
-        patch('users', 'u1', (u) => ({
-          plan: order.kind, quota: order.tier === 'inf' ? null : order.tier * GB, up: 0, down: 0,
-          expires: Math.max(u.expires, Date.now()) + order.months * 30 * 86_400_000, status: 'active', peer: true, online: true,
-        }));
-        if (order.kind === 'pro') set((p) => ({ dnsSlots: Math.max(p.dnsSlots, 2) }));
-        log('mikrotik', 'info', 'POST /rest/queue/simple/reset-counters + PATCH peer disabled=false · Arash_AWP', 'panel', '10.0.0.4');
+  const pay = async () => {
+    setBusy(true);
+    try {
+      const r = await api('/api/orders', { method: 'POST', body: { order: { ...input, ...(quoteRes ? { code: code.trim() } : {}) }, gateway: gw } });
+      if (r.status === 'redirect') {
+        window.location.href = r.redirect;
+        return;
       }
-      setStep(3);
+      setPaid(r);
+      refreshUser();
       toast('پرداخت تایید شد و سرویس فعاله.');
-    }, 2700);
+    } catch (e) {
+      toast(e.message, 'bad');
+    }
+    setBusy(false);
   };
+
+  if (!s.user) {
+    return (
+      <Modal open onClose={onClose} title="برای خرید وارد حسابت شو">
+        <p className="text-sm leading-7 text-silver">«{order.title}» توی حساب کاربریت فعال می‌شه و کانفیگ اتصال رو از پنل می‌گیری. اگه حساب نداری، ثبت‌نام کمتر از یک دقیقه طول می‌کشه.</p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <a href={`/register?next=${encodeURIComponent('/#pricing')}`} className="inline-flex h-10 items-center rounded-xl bg-brand px-5 text-[13px] font-bold text-white hover:bg-brand2">ثبت‌نام</a>
+          <a href={`/login?next=${encodeURIComponent('/#pricing')}`} className="inline-flex h-10 items-center rounded-xl bg-white/[0.06] px-5 text-[13px] font-bold hover:bg-white/[0.11]">ورود</a>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
       open
-      onClose={step >= 0 && !done ? () => {} : onClose}
-      title={done ? 'سرویس فعال شد' : 'تسویه سفارش'}
+      onClose={busy ? () => {} : onClose}
+      title={paid ? 'سرویس فعال شد' : 'تسویه سفارش'}
       footer={
-        done ? (
+        paid ? (
           <>
             <Btn variant="ghost" onClick={onClose}>بستن</Btn>
             <Btn icon={ArrowLeft} onClick={() => { onClose(); go('panel'); }}>برو به پنل و کانفیگ رو بگیر</Btn>
           </>
         ) : (
           <>
-            <Btn variant="ghost" onClick={onClose} disabled={step >= 0}>انصراف</Btn>
-            <Btn onClick={pay} busy={step >= 0} disabled={walletShort}>پرداخت {toman(total)}</Btn>
+            <Btn variant="ghost" onClick={onClose} disabled={busy}>انصراف</Btn>
+            <Btn onClick={pay} busy={busy} disabled={walletShort || !me}>پرداخت {toman(total)}</Btn>
           </>
         )
       }
@@ -637,22 +692,24 @@ function Checkout({ order, onClose, go }) {
         <dl className="mt-3 space-y-1.5 text-sm">
           <div className="flex justify-between text-silver"><dt>قیمت پایه</dt><dd>{toman(order.gross)}</dd></div>
           {order.off > 0 && <div className="flex justify-between text-ok"><dt>تخفیف {fa(order.months)} ماهه</dt><dd>{fa(order.off)}٪</dd></div>}
-          {applied && <div className="flex justify-between text-ok"><dt>کد <Mono>{applied.code}</Mono></dt><dd>{fa(applied.percent)}٪</dd></div>}
-          <div className="flex justify-between border-t border-white/8 pt-2 text-base font-black"><dt>مبلغ نهایی</dt><dd>{toman(total)}</dd></div>
+          {quoteRes?.discount > 0 && <div className="flex justify-between text-ok"><dt>کد <Mono>{code.trim().toUpperCase()}</Mono></dt><dd>−{toman(quoteRes.discount)}</dd></div>}
+          <div className="flex justify-between border-t border-white/8 pt-2 text-base font-black"><dt>مبلغ نهایی</dt><dd data-total>{toman(total)}</dd></div>
         </dl>
       </div>
 
-      {step < 0 ? (
+      {paid ? (
+        <p className="mt-4 flex items-start gap-2 text-sm leading-7 text-ok"><Check className="mt-1.5 size-4 shrink-0" /> فاکتور <Mono>INV-{paid.number}</Mono> پرداخت شد. کانفیگ WireGuard و QR اتصال توی پنل آماده‌ست.</p>
+      ) : (
         <>
           <div className="mt-4 flex items-end gap-2">
             <Field label="کد تخفیف" error={codeErr} className="flex-1">
-              <input id="co-code" dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} placeholder="DOPING20" className="field mono uppercase" />
+              <input id="co-code" dir="ltr" value={code} onChange={(e) => { setCode(e.target.value); setQuote(null); setCodeErr(''); }} placeholder="DOPING20" className="field mono uppercase" />
             </Field>
             <Btn variant="ghost" icon={BadgePercent} onClick={applyCode} className={codeErr ? 'mb-6' : ''}>اعمال</Btn>
           </div>
           <div className="mt-4 text-xs font-bold text-silver">روش پرداخت</div>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {[{ id: 'wallet', name: 'کیف پول', kind: `موجودی ${toman(s.wallet)}` }, ...gateways].map((g) => (
+            {(me?.gateways ?? []).map((g) => (
               <button
                 key={g.id}
                 type="button"
@@ -663,24 +720,15 @@ function Checkout({ order, onClose, go }) {
                 {g.id === 'wallet' ? <Wallet className="size-5 text-brand2" /> : <ShieldCheck className="size-5 text-silver" />}
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-bold">{g.name}</span>
-                  <span className="block truncate text-[11px] text-silver">{g.kind}</span>
+                  <span className="block truncate text-[11px] text-silver">{g.id === 'wallet' ? `موجودی ${toman(wallet)}` : g.kind}</span>
                 </span>
               </button>
             ))}
+            {!me && <div className="well p-4 text-center text-xs text-zinc-500 sm:col-span-2">در حال بارگذاری…</div>}
           </div>
-          {walletShort && <p className="mt-3 text-xs text-warn">موجودی کیف پول کمه. یه درگاه دیگه انتخاب کن یا از پنل کیف پولت رو شارژ کن.</p>}
+          {walletShort && <p className="mt-3 text-xs text-warn">موجودی کیف پول کمه. درگاه بانکی رو انتخاب کن یا از پنل کیف پولت رو شارژ کن.</p>}
+          {gw === 'zarinpal' && <p className="mt-3 text-[11px] leading-5 text-zinc-500">به درگاه امن زرین‌پال منتقل می‌شی و بعد از پرداخت خودکار برمی‌گردی؛ سرویس همون لحظه روی روتر فعال می‌شه.</p>}
         </>
-      ) : (
-        <ol className="mt-5 space-y-3">
-          {STEPS.map((label, i) => (
-            <li key={label} className="flex items-center gap-3 text-sm">
-              <span className={cx('grid size-6 place-items-center rounded-full border text-xs', step > i ? 'border-ok bg-ok/20 text-ok' : step === i ? 'border-brand2 text-brand2' : 'border-white/15 text-zinc-600')}>
-                {step > i ? <Check className="size-3.5" /> : step === i ? <span className="size-3 animate-spin rounded-full border-2 border-brand2/30 border-t-brand2" /> : i + 1}
-              </span>
-              <span className={step >= i ? 'font-bold' : 'text-zinc-500'}>{label}</span>
-            </li>
-          ))}
-        </ol>
       )}
     </Modal>
   );
@@ -789,7 +837,7 @@ function Faq({ go }) {
             <Search className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-zinc-600" />
             <input id="faq-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو در پرسش‌ها…" className="field pr-9" />
           </div>
-          <Btn variant="ghost" icon={MessageCircleQuestion} className="mt-3" onClick={() => { set({ panelTab: 'support' }); go('panel'); }}>
+          <Btn variant="ghost" icon={MessageCircleQuestion} className="mt-3" onClick={() => go('support')}>
             سؤالت اینجا نیست؟ تیکت بزن
           </Btn>
         </div>
@@ -849,8 +897,13 @@ function Closing({ go }) {
   );
 }
 
-export default function Storefront({ go }) {
+const ROUTES = { panel: '/panel', support: '/panel?tab=support', store: '/' };
+
+export default function Storefront({ servers = [], stats = { nodes: 0, online: 0 } }) {
   const { s } = useStore();
+  const router = useRouter();
+  const live = useLiveData(servers, stats);
+  const go = (id) => router.push(ROUTES[id] ?? '/');
   const { show, order } = s.site;
   // Sections render in the order chosen in Admin → «تنظیمات سایت».
   const SECTIONS = {
@@ -863,9 +916,9 @@ export default function Storefront({ go }) {
     cta: () => <Closing go={go} />,
   };
   return (
-    <>
+    <Live.Provider value={live}>
       <Hero />
       {order.map((k) => show[k] !== false && SECTIONS[k] && <div key={k} data-section={k}>{SECTIONS[k]()}</div>)}
-    </>
+    </Live.Provider>
   );
 }

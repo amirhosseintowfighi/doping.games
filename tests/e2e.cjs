@@ -1,358 +1,321 @@
-// End-to-end smoke test. Run with `npm test` (builds the single-file bundle first).
-// Needs Playwright with Chromium available on the machine: `npx playwright install chromium` once, if it is not.
-const path = require('node:path');
+// End-to-end test against a running app (`npm run build && npm start`) with its own PostgreSQL.
+// It starts a fake RouterOS REST API and a fake CS2 server, then drives the real UI and API:
+// sign-up → purchase through the test gateway → provisioning on the router → quota enforcement →
+// wallet → DNS whitelist → tickets → admin (routers, game servers via A2S + RCON, discounts, site settings)
+// and the security checks (CSRF, Origin, roles).
+//
+// Env: BASE_URL (default http://localhost:3000), ADMIN_EMAIL, ADMIN_PASSWORD (same as the app's).
+// Run the app with QUOTA_INTERVAL_SEC and SERVER_POLL_SEC set low (e.g. 5) for the worker checks.
+const https = require('node:https');
 const { chromium } = require('playwright');
+const { startRouterOS } = require('./mocks/routeros.cjs');
+const { startGameServer } = require('./mocks/gameserver.cjs');
 
-// BASE_URL=http://localhost:8080/ runs the same checks against a deployed or containerised build.
-const URL = process.env.BASE_URL || 'file://' + path.resolve(__dirname, '../dist/index.html');
-const failures = [];
-let passed = 0;
-const check = (name, ok, detail = '') => { if (ok) passed++; else failures.push(`${name}${detail ? ` → ${detail}` : ''}`); };
-const tab = (label) => `[role=tab]:has-text("${label}")`;
+const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const ADMIN = { email: process.env.ADMIN_EMAIL || 'admin@doping.test', password: process.env.ADMIN_PASSWORD || 'admin-pass-12345' };
+const RUN = Date.now().toString(36).slice(-5);
+const USER = { username: `gamer_${RUN}`, email: `gamer_${RUN}@test.ir`, password: 'Gamer-pass-123' };
+const ROUTER_PASS = 'router-api-pass-1234';
+const GB = 1024 ** 3;
 
-async function open(browser, viewport, hash = '') {
-  const page = await browser.newPage({ viewport });
-  page.on('pageerror', (e) => failures.push(`page error: ${e.message}`));
-  page.on('console', (m) => m.type() === 'error' && !/ipify|ERR_|Failed to load resource/.test(m.text()) && failures.push(`console: ${m.text()}`));
-  await page.goto(URL + hash);
-  await page.waitForSelector('main');
-  return page;
+let pass = 0;
+let failed = 0;
+const check = (name, ok, extra = '') => {
+  if (ok) pass++; else failed++;
+  console.log(`${ok ? '✓' : '✗'} ${name}${!ok && extra ? ` — ${extra}` : ''}`);
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(fn, ms = 40_000, step = 500) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await fn().catch(() => null);
+    if (v) return v;
+    if (Date.now() > end) return null;
+    await sleep(step);
+  }
 }
-const go = async (page, view) => { await page.evaluate((h) => { window.location.hash = h; }, view); await page.waitForTimeout(350); };
-const text = (page) => page.evaluate(() => document.body.innerText);
+
+/** API helper bound to a browser context's cookies, so CSRF and session match the UI. */
+function client(ctx) {
+  return async (path, { method = 'GET', body, csrf = true, origin = BASE } = {}) => {
+    const cookies = await ctx.cookies(BASE);
+    const jar = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    const token = cookies.find((c) => c.name.endsWith('dp_csrf'))?.value ?? '';
+    const res = await fetch(BASE + path, {
+      method,
+      headers: { Cookie: jar, 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}), ...(csrf && method !== 'GET' ? { 'X-CSRF-Token': token } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      redirect: 'manual',
+    });
+    let json = null;
+    try { json = await res.json(); } catch { /* empty */ }
+    return { status: res.status, json };
+  };
+}
+const pay = (authority, status = 'OK') => fetch(`${BASE}/api/pay/callback?Authority=${authority}&Status=${status}`, { redirect: 'manual' });
+const authorityOf = (r) => new URL(r.json.redirect, BASE).searchParams.get('authority');
+
+async function login(page, id, password) {
+  await page.goto(`${BASE}/login`);
+  await page.fill('#auth-login', id);
+  await page.fill('#auth-password', password);
+  await page.click('button[type=submit]');
+  await page.waitForURL((u) => !u.pathname.startsWith('/login'));
+}
+const rail = (page, label) => page.getByText(label, { exact: true }).first().click();
+
+function traffic(port, name, up, down) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ host: '127.0.0.1', port, path: '/__traffic', method: 'POST', rejectUnauthorized: false }, (res) => { res.resume(); res.on('end', resolve); });
+    req.on('error', reject);
+    req.end(JSON.stringify({ name, up, down }));
+  });
+}
 
 (async () => {
+  const ros = await startRouterOS({ pass: ROUTER_PASS });
+  const game = await startGameServer();
   const browser = await chromium.launch();
+  const errors = [];
+  const watch = (page) => {
+    page.on('pageerror', (e) => errors.push(`${page.url()} ${e.message}`));
+    page.on('console', (m) => { if (m.type() === 'error' && !/ipify|net::ERR|status of 4\d\d/.test(m.text())) errors.push(`${page.url()} ${m.text()}`); });
+  };
 
-  // ── Phone width: no view may scroll sideways ──
-  const phone = await open(browser, { width: 390, height: 800 });
-  for (const view of ['store', 'panel', 'admin', 'blueprint']) {
-    await go(phone, view);
-    const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    check(`no horizontal scroll on ${view} at 390px`, overflow <= 1, `${overflow}px`);
-  }
-  await go(phone, 'admin');
-  await phone.click(tab('تنظیمات سایت'));
-  check('settings page fits a phone', (await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1);
-  await phone.close();
+  /* ───────── public site ───────── */
+  const uctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await uctx.newPage();
+  watch(page);
+  const res = await page.goto(BASE);
+  check('home responds 200', res.status() === 200);
+  check('home is server-rendered (hero in the HTML)', (await res.text()).includes('<h1'));
+  check('pricing cards render', (await page.locator('#pricing [data-plan]').count()) >= 3);
+  check('health endpoint', (await (await fetch(`${BASE}/api/healthz`)).json()).ok === true);
 
-  const page = await open(browser, { width: 1366, height: 900 });
+  /* ───────── sign-up ───────── */
+  await page.goto(`${BASE}/register`);
+  await page.fill('#auth-email', USER.email);
+  await page.fill('#auth-username', USER.username);
+  await page.fill('#auth-password', 'short');
+  await page.click('button[type=submit]');
+  check('register rejects a short password', await page.getByText('رمز حداقل ۸ کاراکتر.').first().waitFor({ timeout: 5000 }).then(() => true, () => false));
+  await page.fill('#auth-password', USER.password);
+  await page.click('button[type=submit]');
+  await page.waitForURL('**/panel');
+  check('register signs in and opens the panel', page.url().endsWith('/panel'));
+  check('panel shows the empty state before purchase', await page.getByText('هنوز اشتراکی نداری').isVisible());
+  const api = client(uctx);
+  check('duplicate username refused', (await fetch(`${BASE}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ ...USER, email: `x${USER.email}` }) })).status === 409);
 
-  // ── Storefront ──
-  check('hero tagline is removed', !(await text(page)).includes('تانل اختصاصی گیمینگ · MikroTik'));
-  await page.evaluate(() => Promise.all([...document.querySelectorAll('main img')].map((i) => { i.loading = 'eager'; return i.decode().catch(() => {}); })));
-  const covers = await page.evaluate(() => [...document.querySelectorAll('main img')].map((i) => i.complete && i.naturalWidth > 0));
-  check('all game covers load', covers.length >= 15 && covers.every(Boolean), `${covers.filter(Boolean).length}/${covers.length}`);
+  /* ───────── purchase through the gateway (UI) ───────── */
+  await page.goto(`${BASE}/#pricing`);
+  await page.locator('#pricing [data-plan="15"]').getByRole('button', { name: 'فعال‌سازی' }).click();
+  await page.getByRole('button', { name: /زرین‌پال/ }).click();
+  await page.getByRole('button', { name: /^پرداخت/ }).click();
+  await page.waitForURL('**/pay/test**');
+  check('checkout redirects to the gateway', page.url().includes('/pay/test?authority=TEST'));
+  const firstAuthority = new URL(page.url()).searchParams.get('authority');
+  await page.getByText('پرداخت موفق').click();
+  await page.waitForURL('**/pay/result**');
+  check('gateway callback verifies and shows success', await page.getByText('پرداخت موفق بود').isVisible());
+  let me = (await api('/api/me')).json;
+  check('invoice recorded as paid with a bank reference', me.invoices[0]?.status === 'paid' && !!me.invoices[0].refId);
+  check('subscription active with a 15 GB quota', me.sub?.status === 'active' && me.sub.quota === 15 * GB);
+  check('tunnel address allocated', /^10\.66\.\d+\.\d+$/.test(me.sub?.ip ?? ''), me.sub?.ip);
+  const conf = (await api('/api/me/config')).json;
+  check('WireGuard config built from server-side keys', /PrivateKey = [A-Za-z0-9+/]{43}=/.test(conf?.text ?? ''));
+  const expires = me.sub.expires;
+  await pay(firstAuthority);
+  me = (await api('/api/me')).json;
+  check('replayed callback grants nothing twice', me.sub.expires === expires && me.invoices.length === 1);
 
-  // hero route scene
-  check('hero scene animates packets on the tunnel', (await page.locator('main svg animateMotion').count()) >= 3);
-  await page.click('g[role=button][aria-label^="دبی"]');
-  check('clicking an exit in the scene selects it', (await page.getAttribute('g[role=button][aria-label^="دبی"]', 'aria-pressed')) === 'true');
-  check('scene exit choice reaches the ping test', (await page.inputValue('#ping-exit')) === 'dxb');
-  await page.focus('g[role=button][aria-label^="مسقط"]');
-  await page.keyboard.press('Enter');
-  check('exits work from the keyboard', (await page.inputValue('#ping-exit')) === 'mct');
-  await page.click('[role=radio][aria-label="مقصد Dota 2"]');
-  check('scene game choice reaches the ping test', (await page.getAttribute('#ping-test [role=radio][aria-label="Dota 2"]', 'aria-checked')) === 'true');
-  check('scene shows the chosen game', (await page.locator('main svg text:has-text("Valve Dubai")').count()) >= 1);
-  await page.click('[role=tab]:has-text("بدون دوپینگ")');
-  check('route switch shows the ordinary route', (await text(page)).includes('٪ پکت لاس'));
-  await page.click('[role=tab]:has-text("با دوپینگ")');
-  check('route switch back shows the exit', (await text(page)).includes('از خروجی مسقط'));
+  /* ───────── security ───────── */
+  const ticket = { subject: 'xxxxxxx', dept: 'فنی', text: 'xxxxxxxxxxxxx' };
+  check('write without CSRF token is rejected', (await api('/api/me/tickets', { method: 'POST', body: ticket, csrf: false })).status === 403);
+  check('cross-origin write is rejected', (await api('/api/me/tickets', { method: 'POST', body: ticket, origin: 'https://evil.example' })).status === 403);
+  check('user cannot read admin APIs', (await api('/api/admin/users')).status === 403);
+  check('anonymous cannot read the panel API', (await fetch(`${BASE}/api/me`)).status === 401);
+  check('invented plan tier refused by the server', (await api('/api/orders', { method: 'POST', body: { order: { type: 'plan', kind: 'ping', tier: 7, months: 1 }, gateway: 'wallet' } })).status === 422);
+  check('wallet cannot go negative', (await api('/api/orders', { method: 'POST', body: { order: { type: 'plan', kind: 'ping', tier: 15, months: 1 }, gateway: 'wallet' } })).status === 402);
+  const anonAdmin = await fetch(`${BASE}/admin`, { redirect: 'manual' });
+  check('admin page redirects anonymous visitors to login', (anonAdmin.headers.get('location') ?? '').includes('/login') || [303, 307].includes(anonAdmin.status));
 
-  // ping test: pick an ISP and a game, wait for the run to finish, compare
-  await page.selectOption('#ping-isp', 'rightel');
-  await page.click('#ping-test [role=radio][aria-label="VALORANT"]');
-  check('ping test runs after a change', (await text(page)).includes('در حال تست'));
-  await page.waitForSelector('#ping-test button:has-text("تست دوباره"):not([disabled])', { timeout: 8000 });
-  const avgs = await page.$$eval('#ping-test dd.text-2xl', (els) => els.map((e) => Number(e.querySelector('.mono').textContent)));
-  check('Doping ping is lower than the ISP route', avgs[1] > 0 && avgs[1] < avgs[0], avgs.join(' → '));
-  check('chosen game is marked', (await page.getAttribute('#ping-test [role=radio][aria-label="VALORANT"]', 'aria-checked')) === 'true');
+  /* ───────── admin: router + provisioning ───────── */
+  const actx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const admin = await actx.newPage();
+  watch(admin);
+  await login(admin, ADMIN.email, ADMIN.password);
+  check('admin lands on the control center', admin.url().endsWith('/admin'));
+  const aapi = client(actx);
+  const rname = `THR-${RUN}`.toUpperCase();
+  await admin.getByRole('button', { name: 'افزودن روتر' }).click();
+  await admin.fill('#rt-name', rname);
+  await admin.fill('#rt-host', '127.0.0.1');
+  await admin.fill('#rt-port', String(ros.port));
+  await admin.fill('#rt-pass', ROUTER_PASS);
+  await admin.getByRole('button', { name: 'افزودن روتر' }).last().click();
+  await admin.getByText(rname).first().waitFor();
+  check('router saved from the admin form', true);
+  await admin.locator('div', { hasText: rname }).getByRole('button', { name: 'تست اتصال و سینک میکروتیک' }).last().click();
+  const synced = await until(async () => (await admin.locator('[data-sync-log]').innerText()).includes('sync complete'), 20_000);
+  const syncLog = await admin.locator('[data-sync-log]').innerText().catch(() => '');
+  check('sync connects over TLS and completes', !!synced, syncLog.slice(-300));
+  check('sync pins the router certificate on first use', syncLog.includes('pinned'));
+  await admin.getByRole('button', { name: 'بستن' }).last().click();
+  const r = (await aapi('/api/admin/overview')).json.routers.find((x) => x.name === rname);
+  check('router online with RouterOS version and fingerprint', r?.status === 'online' && r.version === '7.19.4' && /^([0-9A-F]{2}:){31}/.test(r.fingerprint));
+  check('router password never returned by the API', !JSON.stringify(r).includes(ROUTER_PASS));
+  const subId = (await aapi('/api/admin/users')).json.find((u) => u.username === USER.username)?.sub?.id;
+  const peer = () => ros.state.peers.find((p) => p.comment === `doping:${subId}`);
+  check('peer created on the router for the paid subscription', peer()?.disabled === 'false');
+  check('simple queue created for the subscription', ros.state.queues.some((q) => q.name === `dp-${subId}`));
+  me = (await api('/api/me')).json;
+  check('panel shows the subscription as provisioned', me.sub.provisioned === true && me.sub.router === rname);
+  const conf2 = (await api('/api/me/config')).json;
+  check('config uses the router endpoint and its WireGuard key', conf2.endpoint === '127.0.0.1:51820' && conf2.serverKey.startsWith('U2VydmVy'));
 
-  // game details
-  await page.click('button[data-game="Counter-Strike 2"]');
-  check('game details open', (await text(page)).includes('پینگ از هر خروجی'));
-  const box = await page.locator('[role=dialog] > div.glass').boundingBox();
-  check('dialog is inside the viewport', box && box.y >= 0 && box.y + box.height <= 900, JSON.stringify(box));
-  await page.click('[role=dialog] button:has-text("تست پینگ این بازی")');
-  check('details close and start a test for that game', (await page.locator('[role=dialog]').count()) === 0 && (await page.getAttribute('#ping-test [role=radio][aria-label="Counter-Strike 2"]', 'aria-checked')) === 'true');
-  await page.waitForSelector('#ping-test button:has-text("تست دوباره"):not([disabled])', { timeout: 8000 });
+  /* ───────── key reset (UI) ───────── */
+  const oldPub = peer()['public-key'];
+  await page.goto(`${BASE}/panel?tab=connect`);
+  await page.getByRole('button', { name: /ریست کلید اتصال \(/ }).click();
+  await page.getByRole('button', { name: 'آره، کلید جدید بساز' }).click();
+  await page.getByText(/کلید جدید ساخته شد/).first().waitFor();
+  check('key reset rotates the peer key on the router in place', !!peer()['public-key'] && peer()['public-key'] !== oldPub);
+  check('the old config stops matching', (await api('/api/me/config')).json.text !== conf2.text);
 
-  // traffic calculator → recommended plan
-  for (const el of await page.$$('button[aria-pressed="true"]:has(img)')) await el.click();
-  await page.click('button[aria-pressed]:has-text("Warzone")');
-  await page.fill('#calc-hours', '12');
-  await page.fill('#calc-days', '7');
-  check('calculator recommends 100 GB for heavy Warzone play', (await text(page)).includes('کاهش پینگ · ۱۰۰ گیگ'));
-  await page.click('button:has-text("انتخاب این پلن")');
-  check('pricing highlights the recommended plan', (await page.locator('[data-plan="100"]').innerText()).includes('پیشنهاد برای تو'));
+  /* ───────── quota worker ───────── */
+  await traffic(ros.port, `dp-${subId}`, GB, 15 * GB);
+  check('quota worker reads queue counters and suspends at the limit', !!(await until(async () => (await api('/api/me')).json.sub.status === 'quota', 60_000, 1000)));
+  check('peer disabled on the router when the quota runs out', peer()?.disabled === 'true');
+  me = (await api('/api/me')).json;
+  check('usage recorded per day', me.usage.some((d) => d.down >= 15 * GB));
+  check('handshake read from the router marks the tunnel online', me.sub.online === true);
 
-  // servers: scoreboard and favourites
-  await page.locator('#servers ul > li').nth(2).locator('button[aria-expanded]').click();
-  check('server row opens a live scoreboard', (await text(page)).includes('جدول امتیاز زنده'));
-  await page.locator('#servers ul > li').nth(2).locator('button[aria-pressed]').click();
-  check('favourites tab appears', (await page.locator('#servers [role=tab]:has-text("علاقه‌مندی‌ها")').count()) === 1);
-  await page.click('#servers [role=tab]:has-text("علاقه‌مندی‌ها")');
-  check('favourites tab lists one server', (await page.locator('#servers ul > li').count()) === 1);
-  await page.click('#servers [role=tab]:has-text("همه")');
-  check('server list has Steam connect links', (await page.locator('a[href^="steam://connect/"]').count()) >= 5);
+  /* ───────── wallet top-up + extra traffic ───────── */
+  const top = await api('/api/orders', { method: 'POST', body: { order: { type: 'topup', amount: 100_000 }, gateway: 'zarinpal' } });
+  await pay(authorityOf(top));
+  await pay(authorityOf(top));
+  me = (await api('/api/me')).json;
+  check('wallet credited exactly once for a replayed callback', me.user.wallet === 100_000, String(me.user.wallet));
+  const extra = await api('/api/orders', { method: 'POST', body: { order: { type: 'extra', gb: 5 }, gateway: 'wallet' } });
+  check('extra traffic paid from the wallet', extra.json?.status === 'paid');
+  me = (await api('/api/me')).json;
+  check('extra traffic raises the quota and reactivates', me.sub.status === 'active' && me.sub.quota === 20 * GB);
+  check('peer re-enabled on the router', peer()?.disabled === 'false');
+  check('wallet debited by the extra-traffic price', me.user.wallet === 100_000 - 5 * 5_000, String(me.user.wallet));
+  const cancel = await api('/api/orders', { method: 'POST', body: { order: { type: 'topup', amount: 50_000 }, gateway: 'zarinpal' } });
+  await pay(authorityOf(cancel), 'NOK');
+  check('canceled payment credits nothing', (await api('/api/me')).json.user.wallet === 75_000);
 
-  // ── Motion ──
-  const depthTransform = () => page.evaluate(() => document.querySelector('#faq [data-depth]')?.style.transform ?? '');
-  await page.evaluate(() => document.getElementById('faq').scrollIntoView({ block: 'end', behavior: 'instant' }));
-  await page.waitForFunction(() => document.querySelector('#faq [data-depth]')?.style.transform, null, { timeout: 3000 }).catch(() => {});
-  const t1 = await depthTransform();
-  await page.mouse.wheel(0, 500);
-  await page.waitForTimeout(250);
-  const t2 = await depthTransform();
-  check('FAQ parallax layers move with scroll', t1.startsWith('translate3d') && t1 !== t2, `${t1} → ${t2}`);
+  /* ───────── DNS whitelist ───────── */
+  check('DNS refused on a plan without DNS slots', (await api('/api/me/dns', { method: 'POST', body: { ip: '5.160.14.92' } })).status === 403);
+  const pro = await api('/api/orders', { method: 'POST', body: { order: { type: 'plan', kind: 'pro', tier: 30, months: 1 }, gateway: 'zarinpal' } });
+  await pay(authorityOf(pro));
+  const ip = (await api('/api/me')).json.sub.ip;
+  me = (await api('/api/me')).json;
+  check('upgrade to pro adds DNS slots and keeps the tunnel', me.sub.kind === 'pro' && me.sub.dnsSlots === 2 && me.sub.ip === ip);
+  check('new period resets usage and router counters', me.sub.up + me.sub.down === 0 && ros.state.queues.find((q) => q.name === `dp-${subId}`)?.bytes === '0/0');
+  await page.goto(`${BASE}/panel?tab=dns`);
+  await page.fill('#dns-manual', '5.160.14.92');
+  await page.getByRole('button', { name: 'افزودن' }).click();
+  await page.getByText('5.160.14.92').first().waitFor();
+  check('DNS IP added from the panel', true);
+  check('IP added to the router address-list', ros.state.lists.some((l) => l.address === '5.160.14.92' && l.list === 'doping-dns-allowed'));
+  check('duplicate IP refused', (await api('/api/me/dns', { method: 'POST', body: { ip: '5.160.14.92' } })).status === 409);
+  check('private IP refused', (await api('/api/me/dns', { method: 'POST', body: { ip: '10.0.0.5' } })).status === 422);
 
-  await page.fill('#faq-search', 'کنسول');
-  check('FAQ search filters questions', (await page.locator('#faq button[aria-expanded]').count()) === 1);
-  await page.fill('#faq-search', 'قورباغه');
-  check('FAQ search says when nothing matches', (await text(page)).includes('پرسشی با «قورباغه» پیدا نشد'));
-  await page.fill('#faq-search', '');
-  const q2 = page.locator('#faq button[aria-expanded]').nth(1);
-  await q2.click();
-  check('FAQ question opens', (await q2.getAttribute('aria-expanded')) === 'true');
-  check('closed FAQ answers are inert', (await page.locator('#faq [id^="faq-a-"][inert]').count()) === (await page.locator('#faq [id^="faq-a-"]').count()) - 1);
+  /* ───────── tickets ───────── */
+  await page.goto(`${BASE}/panel?tab=support`);
+  await page.getByRole('button', { name: 'تیکت جدید' }).click();
+  await page.fill('#tk-subject', `پینگ بالا روی Valorant ${RUN}`);
+  await page.fill('#tk-text', 'از ساعت ۹ شب پینگ ۹۰ شده و پکت لاس داره.');
+  await page.getByRole('button', { name: 'ثبت تیکت' }).click();
+  await page.getByText(`پینگ بالا روی Valorant ${RUN}`).first().waitFor();
+  check('ticket created from the panel', true);
+  await rail(admin, 'تیکت‌های پشتیبانی');
+  await admin.getByText(`پینگ بالا روی Valorant ${RUN}`).first().click();
+  await admin.fill('#adm-reply', 'خروجی دبی رو امتحان کن؛ مسیر عمان امشب شلوغه.');
+  await admin.getByRole('button', { name: 'ارسال' }).click();
+  await admin.getByText('پاسخ ارسال شد.').waitFor();
+  const t = (await api('/api/me')).json.tickets[0];
+  check('staff reply reaches the user and marks the ticket answered', t.status === 'answered' && t.msgs.some((m) => m.from === 'staff'));
 
-  const cover = page.locator('button[data-game="Dota 2"]');
-  await cover.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(400); // let the parallax settle before aiming the cursor
-  const cb = await cover.boundingBox();
-  await page.mouse.move(cb.x + cb.width * 0.35, cb.y + cb.height * 0.35);
-  await page.mouse.move(cb.x + cb.width * 0.3, cb.y + cb.height * 0.3);
-  const rx = await cover.evaluate((el) => el.style.getPropertyValue('--rx'));
-  check('covers tilt toward the cursor', rx && rx !== '0deg', rx);
-  await page.mouse.move(5, 5);
+  /* ───────── game servers: A2S + RCON ───────── */
+  await rail(admin, 'سرورهای بازی و RCON');
+  await admin.getByRole('button', { name: 'افزودن سرور' }).click();
+  await admin.fill('#gs-name', `Doping Retake ${RUN}`);
+  await admin.fill('#gs-host', '127.0.0.1');
+  await admin.fill('#gs-port', String(game.port));
+  await admin.fill('#gs-rcon', 'rcon-secret');
+  await admin.getByRole('button', { name: 'افزودن سرور' }).last().click();
+  const srv = await until(async () => (await (await fetch(`${BASE}/api/servers`)).json()).servers.find((s) => s.port === game.port && s.status === 'online'), 40_000, 1000);
+  check('A2S poller reads the live server', !!srv);
+  check('player count and map come from A2S_INFO', srv?.players === 2 && srv.map === 'de_mirage');
+  check('scoreboard names come from A2S_PLAYER', !!srv?.list.some((p) => p.name === 'Arash_AWP'));
+  await page.goto(`${BASE}/#servers`);
+  check('storefront lists the live server', await page.getByText(`Doping Retake ${RUN}`).first().isVisible());
+  await admin.reload();
+  await rail(admin, 'سرورهای بازی و RCON');
+  await admin.locator('tr', { hasText: `Doping Retake ${RUN}` }).getByRole('button', { name: 'RCON' }).click();
+  await admin.getByRole('button', { name: 'status' }).click();
+  check('RCON authenticates and runs status', !!(await until(async () => (await admin.getByText('hostname: Doping Retake #1').count()) > 0, 10_000)));
+  await admin.fill('#rcon-cmd', 'changelevel de_inferno');
+  await admin.keyboard.press('Enter');
+  check('RCON changelevel reaches the server', !!(await until(async () => game.state.map === 'de_inferno', 10_000)));
+  await admin.fill('#rcon-cmd', 'rcon_password hacked');
+  await admin.keyboard.press('Enter');
+  check('commands outside the allow-list are blocked', !!(await until(async () => (await admin.getByText(/فهرست مجاز نیست/).count()) > 0, 5_000)) && !game.state.commands.includes('rcon_password hacked'));
+  await admin.keyboard.press('Escape');
 
-  await page.evaluate(() => document.getElementById('faq').scrollIntoView());
-  const shown = await page.waitForFunction(() => getComputedStyle(document.querySelector('button[aria-label="برگشت به بالای صفحه"]')).opacity === '1', null, { timeout: 3000 }).then(() => true, () => false);
-  check('back-to-top appears after scrolling', shown);
-  await page.click('button[aria-label="برگشت به بالای صفحه"]');
-  await page.waitForFunction(() => window.scrollY < 50, null, { timeout: 4000 });
-  check('back-to-top scrolls to the top', true);
-  await page.waitForTimeout(1000);
-  check('stats count up to their final values', (await text(page)).includes('28ms') && (await text(page)).includes('0%'));
+  /* ───────── discounts ───────── */
+  const code = `E2E${RUN}`.toUpperCase().slice(0, 16);
+  check('discount created', (await aapi('/api/admin/discounts', { method: 'POST', body: { code, percent: 20, max: 1 } })).status === 201);
+  const q1 = await api('/api/orders/quote', { method: 'POST', body: { type: 'plan', kind: 'ping', tier: 15, months: 1, code } });
+  check('discount applied in the server quote', q1.json?.discount > 0 && q1.json.total === q1.json.subtotal - q1.json.discount);
+  const d1 = await api('/api/orders', { method: 'POST', body: { order: { type: 'plan', kind: 'ping', tier: 15, months: 1, code }, gateway: 'zarinpal' } });
+  await pay(authorityOf(d1));
+  check('single-use discount exhausted after payment', (await api('/api/orders/quote', { method: 'POST', body: { type: 'plan', kind: 'ping', tier: 15, months: 1, code } })).status === 422);
 
-  await page.keyboard.press('/');
-  check('"/" focuses the server search', await page.evaluate(() => document.activeElement?.id === 'srv-search'));
-  await page.keyboard.press('Escape');
+  /* ───────── site settings ───────── */
+  const site = (await aapi('/api/admin/site')).json;
+  const line1 = `پینگت ${RUN}`;
+  check('settings saved', (await aapi('/api/admin/site', { method: 'PUT', body: { ...site, hero: { ...site.hero, line1 } } })).status === 200);
+  await sleep(5_200); // settings cache
+  check('home page renders the new hero text', (await (await fetch(BASE)).text()).includes(line1));
+  check('invalid settings rejected', (await aapi('/api/admin/site', { method: 'PUT', body: { ...site, accent: 'red' } })).status === 422);
+  check('regular users cannot change settings', (await api('/api/admin/site', { method: 'PUT', body: site })).status === 403);
+  await aapi('/api/admin/site', { method: 'PUT', body: site });
 
-  await page.click('#faq button:has-text("سؤالت اینجا نیست")');
-  await page.waitForTimeout(300);
-  check('FAQ help button opens the support tab', (await page.getAttribute('[role=tab]:has-text("پشتیبانی")', 'aria-selected')) === 'true');
-  await go(page, 'store');
+  /* ───────── admin user actions + audit ───────── */
+  const uid = (await aapi('/api/admin/users')).json.find((u) => u.username === USER.username).id;
+  await aapi(`/api/admin/users/${uid}`, { method: 'POST', body: { action: 'peer', on: false } });
+  check('admin disables the peer on the router', peer()?.disabled === 'true');
+  await aapi(`/api/admin/users/${uid}`, { method: 'POST', body: { action: 'peer', on: true } });
+  check('admin re-enables the peer', peer()?.disabled === 'false');
+  const logs = (await aapi('/api/admin/logs?type=payment')).json;
+  check('payments written to the audit log', logs.some((l) => l.msg.includes('verify OK')));
 
-  // purchase with a discount code, paid from the wallet
-  await page.click('#pricing button:has-text("فعال‌سازی") >> nth=1');
-  await page.fill('#co-code', 'doping20');
-  await page.click('button:has-text("اعمال")');
-  check('discount code is applied', (await text(page)).includes('DOPING20'));
-  await page.click('[role=dialog] button:has-text("پرداخت")');
-  await page.waitForSelector('text=سرویس فعال شد', { timeout: 8000 });
-  await page.click('text=برو به پنل');
-  await page.waitForTimeout(400);
+  /* ───────── logout ───────── */
+  await page.goto(BASE);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/api/auth/logout')),
+    page.getByRole('button', { name: 'خروج از حساب' }).click(),
+  ]);
+  await page.getByRole('link', { name: 'ورود' }).waitFor();
+  check('logout ends the session', (await api('/api/me')).status === 401);
 
-  // ── Gamer panel ──
-  check('purchase resets the quota to 30 GB', (await text(page)).includes('GB / 30 GB'));
-  await page.hover('[role=listbox] [role=option] >> nth=0');
-  const firstDay = await page.locator('[aria-live=polite]:has-text("دانلود")').innerText();
-  check('usage chart shows the hovered day', !firstDay.includes('امروز'));
-  await page.click('[role=tab]:has-text("آپلود")');
-  check('usage chart filters to upload', (await page.getAttribute('[role=tab]:has-text("آپلود")', 'aria-selected')) === 'true');
-  await page.click(tab('مرکز اتصال'));
-  check('config uses the default endpoint', (await text(page)).includes('thr1.doping.games:51820'));
-  await page.click('text=QR برای موبایل');
-  check('QR code renders', (await page.locator('[role=dialog] svg path').count()) > 0);
-  await page.keyboard.press('Escape');
-  await page.click('[role=tab]:has-text("روتر میکروتیک")');
-  check('router guide uses the endpoint', (await text(page)).includes('endpoint-address=thr1.doping.games endpoint-port=51820'));
-  await page.click('button[aria-label="علامت زدن قدم 1"]');
-  check('guide step can be checked', (await text(page)).includes('۱ از ۳ قدم'));
-  await page.click(tab('DNS هوشمند'));
-  await page.fill('#dns-manual', '10.0.0.1');
-  await page.click('button:has-text("افزودن")');
-  check('private IP is refused for DNS', (await text(page)).includes('آی‌پی داخلی قبول نیست'));
-  await page.fill('#dns-manual', '85.185.20.14');
-  await page.click('button:has-text("افزودن")');
-  await page.waitForTimeout(1300);
-  check('public IP is whitelisted', (await text(page)).includes('85.185.20.14'));
+  check('no browser errors', errors.length === 0, errors.slice(0, 5).join('\n'));
 
-  // ── Admin: routers, users, RCON ──
-  await go(page, 'admin');
-  await page.click('text=تست اتصال و سینک میکروتیک >> nth=0');
-  await page.waitForSelector('text=✓ sync complete', { timeout: 8000 });
-  await page.keyboard.press('Escape');
-  await page.click('main button:has-text("افزودن روتر")');
-  await page.click('[role=dialog] button:has-text("افزودن روتر")');
-  check('router form validates', (await text(page)).includes('آی‌پی نسخه ۴ معتبر وارد کن'));
-  await page.keyboard.press('Escape');
-  await page.click(tab('کاربران و حجم'));
-  await page.click('button[title="Add Traffic"] >> nth=5');
-  check('adding traffic re-activates an exceeded user', (await text(page)).includes('۵ گیگ به HiradTap اضافه شد'));
-  await page.click(tab('سرورهای بازی'));
-  await page.click('table button:has-text("RCON") >> nth=0');
-  await page.fill('#rcon-cmd', 'changelevel de_nuke');
-  await page.keyboard.press('Enter');
-  await page.fill('#rcon-cmd', 'sv_cheats 1');
-  await page.keyboard.press('Enter');
-  check('RCON refuses commands outside the allow-list', (await text(page)).includes('Unknown command'));
-  await page.keyboard.press('Escape');
-
-  // ── Admin: records that survive a reload ──
-  await page.click(tab('سرورهای بازی'));
-  await page.click('main button:has-text("افزودن سرور")');
-  await page.fill('#gs-name', 'Doping Test Server');
-  await page.fill('#gs-host', 'test.doping.games');
-  await page.click('[role=dialog] button:has-text("افزودن سرور")');
-  check('admin can add a game server', (await text(page)).includes('Doping Test Server'));
-  await page.click(tab('فروش و درگاه'));
-  await page.fill('#dc-code', 'PERSIST1');
-  await page.click('button:has-text("ساخت")');
-  check('admin can add a discount code', (await text(page)).includes('PERSIST1'));
-  await page.click('button:has-text("ویرایش قیمت‌ها و پلن‌ها")');
-  check('price shortcut opens the plans settings', (await page.getAttribute('[aria-label="بخش‌های تنظیمات"] [role=tab]:has-text("پلن‌ها و قیمت")', 'aria-selected')) === 'true');
-
-  // ── Admin: site settings ──
-  const sub = (label) => page.click(`[aria-label="بخش‌های تنظیمات"] [role=tab]:has-text("${label}")`);
-  check('save is disabled with nothing changed', await page.locator('button:has-text("ذخیره")').isDisabled());
-  await sub('اتصال و DNS');
-  await page.fill('#set-dns-primary', '999.1.1.1');
-  await sub('صفحه اصلی');
-  await page.click('button:has-text("ذخیره")');
-  check('invalid DNS blocks saving', (await text(page)).includes('آی‌پی نسخه ۴ معتبر وارد کن'));
-  check('saving jumps to the sub-tab with the error', (await page.getAttribute('[aria-label="بخش‌های تنظیمات"] [role=tab]:has-text("اتصال و DNS")', 'aria-selected')) === 'true');
-  await page.fill('#set-dns-primary', '185.55.226.26');
-  await page.fill('#set-wg-endpoint', 'edge.example.ir:51820');
-
-  await sub('صفحه اصلی');
-  await page.locator('button[role=switch][aria-label="نمایش نوار اطلاعیه"]').click();
-  await page.fill('#set-banner-text', 'اطلاعیه آزمایشی دوپینگ');
-  await page.fill('#set-hero-accent', 'توربو');
-  await page.fill('#set-hero-desc', 'متن آزمایشی تنظیمات.');
-  await page.fill('#set-stats-0-value', '19ms');
-  await page.fill('#set-text-ping-title', 'تیتر آزمایشی تست پینگ');
-  await page.click('button[aria-label="پایین بردن بازی‌های تحت پوشش"]');
-  await page.locator('button[role=switch][aria-label="نمایش بخش پایانی"]').click();
-
-  await sub('بازی‌ها');
-  await page.fill('#set-games-0-name', 'Test Game X');
-  await page.click('button[aria-label="جزئیات بازی VALORANT"]');
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAAPAAHZ0QJNAAAAAElFTkSuQmCC', 'base64');
-  await page.setInputFiles('#set-games-1-file', { name: 'cover.png', mimeType: 'image/png', buffer: png });
-  await page.waitForFunction(() => document.querySelector('#set-games-1-cover')?.value === 'upload', null, { timeout: 5000 });
-  await page.click('button:has-text("بازی جدید")');
-  const g = (await page.locator('[id^="set-games-"][id$="-name"]').count()) - 1;
-  await page.fill(`#set-games-${g}-name`, 'Arena Breakout');
-  await page.fill(`#set-games-${g}-dc`, 'Tencent ME');
-  await page.fill(`#set-games-${g}-via-dxb`, '24');
-  await page.locator('button[role=switch][aria-label="تست پینگ Arena Breakout"]').click();
-
-  await sub('پلن‌ها و قیمت');
-  await page.fill('#set-planNames-ping', 'کاهش لگ');
-  await page.fill('#set-pricing-ping-1-price', '125000');
-  await page.click('button:has-text("حجم جدید")');
-  await page.click('button:has-text("مدت جدید")');
-
-  await sub('پرسش‌ها');
-  await page.click('button:has-text("پرسش جدید")');
-  const n = (await page.locator('[id^="set-faq-"][id$="-q"]').count()) - 1;
-  await page.fill(`#set-faq-${n}-q`, 'پرسش آزمایشی؟');
-  await page.fill(`#set-faq-${n}-a`, 'پاسخ آزمایشی.');
-
-  await sub('ظاهر و پشتیبان');
-  await page.fill('#set-footer', 'فوتر آزمایشی');
-  await page.fill('#set-accent', '#00A86B');
-  await page.locator('button[role=switch][aria-label="افکت‌های حرکتی"]').click();
-  await page.fill('#set-import', 'this is not json');
-  await page.click('button:has-text("بررسی و وارد کردن")');
-  check('import rejects text that is not JSON', (await text(page)).includes('متن JSON معتبر نیست'));
-  await page.fill('#set-import', '');
-
-  await page.click('button:has-text("ذخیره")');
-  await page.waitForTimeout(300);
-  check('settings save succeeds', (await text(page)).includes('تنظیمات ذخیره شد'));
-
-  await go(page, 'store');
-  let body = await text(page);
-  check('announcement bar shows', body.includes('اطلاعیه آزمایشی دوپینگ'));
-  await page.click('button[aria-label="بستن اطلاعیه"]');
-  check('announcement bar can be closed', !(await text(page)).includes('اطلاعیه آزمایشی دوپینگ'));
-  check('hero accent word changes', body.includes('توربو'));
-  check('hero description changes', body.includes('متن آزمایشی تنظیمات.'));
-  check('stat value changes', body.includes('19ms'));
-  check('ping section title changes', body.includes('تیتر آزمایشی تست پینگ'));
-  check('game name changes', body.includes('Test Game X'));
-  const upSrc = await page.locator('button[data-game]').nth(1).locator('img').getAttribute('src');
-  check('uploaded cover is shown', (upSrc ?? '').startsWith('data:image/'));
-  check('new game appears in covered games', (await page.locator('button[data-game="Arena Breakout"]').count()) === 1);
-  check('new featured game appears in the hero scene', (await page.locator('[role=radio][aria-label="مقصد Arena Breakout"]').count()) === 1);
-  check('new featured game appears in the ping test', (await page.locator('#ping-test [role=radio][aria-label="Arena Breakout"]').count()) === 1);
-  await page.click('[role=radio][aria-label="مقصد Arena Breakout"]');
-  check('new game uses its own exit pings', (await text(page)).includes('24ms'));
-  const order = await page.$$eval('[data-section]', (els) => els.map((e) => e.dataset.section));
-  check('section order follows settings', order.indexOf('calculator') < order.indexOf('games'), order.join(','));
-  check('hidden section is removed', !order.includes('cta'));
-  check('plan name changes', (await page.locator('#pricing [role=tab]:has-text("کاهش لگ")').count()) === 1);
-  check('tier price changes', (await page.locator('[data-plan="30"]').innerText()).includes('۱۲۵'));
-  check('new tier appears', (await page.locator('[data-plan="150"]').count()) === 1);
-  check('new duration appears', (await page.locator('#pricing [role=tab]:has-text("۹ ماهه")').count()) === 1);
-  check('new FAQ appears', body.includes('پرسش آزمایشی؟'));
-  check('footer changes', body.includes('فوتر آزمایشی'));
-  await page.evaluate(() => document.getElementById('faq').scrollIntoView());
-  await page.mouse.wheel(0, 300);
-  await page.waitForTimeout(200);
-  check('motion switch turns parallax off', (await page.evaluate(() => [...document.querySelectorAll('[data-depth]')].every((el) => !el.style.transform))));
-  check('servers changed over RCON show the new map', body.includes('de_nuke'));
-  const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim());
-  check('accent colour is applied', accent.toUpperCase() === '#00A86B', accent);
-
-  await go(page, 'panel');
-  check('panel uses the new plan name', (await text(page)).includes('کاهش لگ'));
-  await page.click(tab('مرکز اتصال'));
-  check('panel config uses the new endpoint', (await text(page)).includes('edge.example.ir:51820'));
-  await page.click(tab('DNS هوشمند'));
-  check('panel shows the new DNS', (await text(page)).includes('185.55.226.26'));
-
-  // settings and admin records survive a reload
-  await page.reload();
-  await page.waitForSelector('main');
-  await go(page, 'store');
-  check('settings persist after reload', (await text(page)).includes('توربو'));
-  check('prices persist after reload', (await page.locator('[data-plan="30"]').innerText()).includes('۱۲۵'));
-  check('chosen ISP persists after reload', (await page.inputValue('#ping-isp')) === 'rightel');
-  check('favourite server persists after reload', (await page.locator('#servers [role=tab]:has-text("علاقه‌مندی‌ها")').count()) === 1);
-  check('added game server persists after reload', (await text(page)).includes('Doping Test Server'));
-  await go(page, 'admin');
-  await page.click(tab('فروش و درگاه'));
-  check('added discount code persists after reload', (await text(page)).includes('PERSIST1'));
-
-  // reset to defaults
-  await page.click(tab('تنظیمات سایت'));
-  await page.click('button:has-text("پیش‌فرض")');
-  await page.click('button:has-text("ذخیره")');
-  await go(page, 'store');
-  body = await text(page);
-  check('reset restores the default hero', body.includes('دوپینگ') && !body.includes('توربو'));
-  check('reset restores default prices', (await page.locator('[data-plan="30"]').innerText()).includes('۱۱۹'));
-  check('reset restores the closing section', (await page.locator('[data-section="cta"]').count()) === 1);
-
-  // ── Visitors who ask for reduced motion get no parallax ──
-  const calm = await browser.newPage({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' });
-  await calm.goto(URL);
-  await calm.waitForSelector('main');
-  await calm.evaluate(() => document.getElementById('faq').scrollIntoView());
-  await calm.mouse.wheel(0, 400);
-  await calm.waitForTimeout(250);
-  check('reduced motion disables parallax', await calm.evaluate(() => [...document.querySelectorAll('[data-depth]')].every((el) => !el.style.transform)));
-  check('reduced motion still shows final numbers', (await text(calm)).includes('28ms'));
-  check('reduced motion stops the packet animation', (await calm.locator('svg animateMotion').count()) === 0);
-  await calm.close();
-
+  // Leave nothing behind that points at the mocks, so the suite can run again on the same database.
+  const o = (await aapi('/api/admin/overview')).json;
+  for (const x of o.routers.filter((y) => y.host === '127.0.0.1')) await aapi(`/api/admin/routers/${x.id}`, { method: 'DELETE' });
+  for (const x of o.servers.filter((y) => y.host === '127.0.0.1')) await aapi(`/api/admin/servers/${x.id}`, { method: 'DELETE' });
   await browser.close();
-  console.log(`${passed} passed, ${failures.length} failed`);
-  for (const f of failures) console.log('  FAIL ' + f);
-  process.exit(failures.length ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+  ros.close();
+  game.close();
+  console.log(`\n${pass} passed, ${failed} failed`);
+  process.exit(failed ? 1 : 0);
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
