@@ -13,6 +13,8 @@ npm run typecheck:backend   # tsc --strict over backend/
 npm test                    # builds, then runs the browser end-to-end test (needs Playwright + Chromium)
 ```
 
+Deploying with Docker / on a PaaS: [`docs/deploy.md`](docs/deploy.md).
+
 Benchmark results and method: [`docs/benchmark.md`](docs/benchmark.md).
 
 ## Layout
