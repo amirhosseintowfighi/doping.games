@@ -2,33 +2,35 @@
   "name": "doping-games",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "typecheck:backend": "tsc -p backend",
-    "test": "SINGLE=1 vite build && node tests/e2e.cjs"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "test": "npm run test:unit",
+    "test:unit": "node --import tsx --test tests/unit/*.test.ts",
+    "test:e2e": "node tests/e2e.cjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/vazirmatn": "^5.3.0",
-    "ioredis": "^6.0.0",
+    "drizzle-orm": "0.45.4",
     "lucide-react": "^1.73.0",
-    "pg": "^8.23.1",
+    "next": "16.4.5",
+    "postgres": "3.4.9",
     "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.5",
-    "@types/node": "^26.6.6",
-    "@types/pg": "^8.23.1",
-    "@vitejs/plugin-react": "^6.3.0",
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "drizzle-kit": "0.31.11",
     "tailwindcss": "^4.3.5",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.8",
-    "vite-plugin-singlefile": "^2.3.4"
+    "typescript": "5.9.3"
   }
 }

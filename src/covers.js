@@ -1,38 +1,18 @@
 // Official game artwork. Steam titles use the publisher's library capsule from the Steam CDN;
 // VALORANT, Fortnite and Minecraft are not on Steam, so their tile is the official logo
 // (from Wikimedia) on a dark background in the game's colour.
-import apex from './assets/covers/apex.webp';
-import apexSm from './assets/covers/apex-sm.webp';
-import cs2 from './assets/covers/cs2.webp';
-import cs2Sm from './assets/covers/cs2-sm.webp';
-import dota2 from './assets/covers/dota2.webp';
-import dota2Sm from './assets/covers/dota2-sm.webp';
-import fc26 from './assets/covers/fc26.webp';
-import fc26Sm from './assets/covers/fc26-sm.webp';
-import fortnite from './assets/covers/fortnite.webp';
-import fortniteSm from './assets/covers/fortnite-sm.webp';
-import minecraft from './assets/covers/minecraft.webp';
-import minecraftSm from './assets/covers/minecraft-sm.webp';
-import pubg from './assets/covers/pubg.webp';
-import pubgSm from './assets/covers/pubg-sm.webp';
-import rust from './assets/covers/rust.webp';
-import rustSm from './assets/covers/rust-sm.webp';
-import valorant from './assets/covers/valorant.webp';
-import valorantSm from './assets/covers/valorant-sm.webp';
-import warzone from './assets/covers/warzone.webp';
-import warzoneSm from './assets/covers/warzone-sm.webp';
 
 export const COVERS = {
-  cs2: { src: cs2, sm: cs2Sm, label: 'Counter-Strike 2' },
-  valorant: { src: valorant, sm: valorantSm, label: 'VALORANT' },
-  fc26: { src: fc26, sm: fc26Sm, label: 'EA SPORTS FC 26' },
-  dota2: { src: dota2, sm: dota2Sm, label: 'Dota 2' },
-  warzone: { src: warzone, sm: warzoneSm, label: 'Call of Duty: Warzone' },
-  apex: { src: apex, sm: apexSm, label: 'Apex Legends' },
-  pubg: { src: pubg, sm: pubgSm, label: 'PUBG: BATTLEGROUNDS' },
-  fortnite: { src: fortnite, sm: fortniteSm, label: 'Fortnite' },
-  rust: { src: rust, sm: rustSm, label: 'Rust' },
-  minecraft: { src: minecraft, sm: minecraftSm, label: 'Minecraft' },
+  cs2: { src: '/covers/cs2.webp', sm: '/covers/cs2-sm.webp', label: 'Counter-Strike 2' },
+  valorant: { src: '/covers/valorant.webp', sm: '/covers/valorant-sm.webp', label: 'VALORANT' },
+  fc26: { src: '/covers/fc26.webp', sm: '/covers/fc26-sm.webp', label: 'EA SPORTS FC 26' },
+  dota2: { src: '/covers/dota2.webp', sm: '/covers/dota2-sm.webp', label: 'Dota 2' },
+  warzone: { src: '/covers/warzone.webp', sm: '/covers/warzone-sm.webp', label: 'Call of Duty: Warzone' },
+  apex: { src: '/covers/apex.webp', sm: '/covers/apex-sm.webp', label: 'Apex Legends' },
+  pubg: { src: '/covers/pubg.webp', sm: '/covers/pubg-sm.webp', label: 'PUBG: BATTLEGROUNDS' },
+  fortnite: { src: '/covers/fortnite.webp', sm: '/covers/fortnite-sm.webp', label: 'Fortnite' },
+  rust: { src: '/covers/rust.webp', sm: '/covers/rust-sm.webp', label: 'Rust' },
+  minecraft: { src: '/covers/minecraft.webp', sm: '/covers/minecraft-sm.webp', label: 'Minecraft' },
 };
 
 /** A built-in key, an uploaded data URL, or nothing (the card then draws its own pattern). */

@@ -1,53 +1,69 @@
-# استقرار روی PaaS
+# راه‌اندازی دوپینگ
 
-سایت یک فرانت‌اند استاتیک است: `npm run build` پوشهٔ `dist/` را می‌سازد و هر سروری که فایل استاتیک سرو کند کافی است. ساده‌ترین راه روی هر PaaS که Docker می‌پذیرد، `Dockerfile` داخل مخزن است.
+دوپینگ حالا یک اپ کامل است: یک سرور Next.js (سایت، پنل گیمر، پنل مدیریت، API و کارهای پس‌زمینه) و یک دیتابیس PostgreSQL. هر سرویسی که Docker و PostgreSQL بدهد کافی است.
 
-## چه چیزی آماده است
+## ۱. متغیرها
 
-| فایل | کار |
+فایل `.env.example` را به `.env` کپی کن و پر کن:
+
+| متغیر | توضیح |
 |---|---|
-| `Dockerfile` | مرحلهٔ اول با Node 22 سایت را می‌سازد، مرحلهٔ دوم با nginx 1.27 سرو می‌کند (ایمیج نهایی حدود ۷۵ مگابایت، بدون Node). |
-| `deploy/nginx.conf.template` | پورت از `PORT` (پیش‌فرض ۸۰)، gzip، کش یک‌ساله برای `/assets/`، بدون کش برای `index.html`، بازگشت مسیرهای ناشناخته به سایت، آدرس سلامت `/healthz`. |
-| `deploy/security-headers.conf` | `Content-Security-Policy`، `X-Frame-Options`، `X-Content-Type-Options`، `Referrer-Policy`، `Permissions-Policy`. |
-| `.dockerignore` | `node_modules`، `dist`، `.git` و تست‌ها وارد ایمیج نمی‌شوند. |
+| `APP_URL` | آدرس عمومی سایت، مثل `https://doping.games`. بانک بعد از پرداخت به همین آدرس برمی‌گردد. |
+| `DATABASE_URL` | آدرس PostgreSQL. با docker-compose خودکار ساخته می‌شود. |
+| `DOPING_KMS_KEYS` / `DOPING_KMS_ACTIVE` | کلید رمزگذاری رمز روترها، رمز RCON و کلیدهای خصوصی WireGuard. با `openssl rand -base64 32` بساز، مثلاً `DOPING_KMS_KEYS=k2026:<کلید>` و `DOPING_KMS_ACTIVE=k2026`. **این کلید را گم نکن**؛ بدون آن کانفیگ کاربرها قابل بازسازی نیست. بدون آن اپ در حالت production بالا نمی‌آید. |
+| `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | اولین حساب مدیر، فقط وقتی هیچ مدیری وجود ندارد ساخته می‌شود (رمز حداقل ۱۲ کاراکتر). |
+| `ZARINPAL_MERCHANT_ID` | مرچنت زرین‌پال. تا خالی باشد، درگاه **آزمایشی** داخلی فعال است و پولی جابه‌جا نمی‌شود. |
+| `PAYMENT_MODE` | `live` یا `sandbox` (فقط وقتی مرچنت تنظیم شده). |
+| `POSTGRES_PASSWORD` | رمز دیتابیس در docker-compose. |
 
-## تنظیمات روی پنل PaaS
+اختیاری: `REGISTRATION=false` (ثبت‌نام بسته)، `QUOTA_INTERVAL_SEC` (پیش‌فرض ۳۰۰ ثانیه)، `SERVER_POLL_SEC` (پیش‌فرض ۳۰)، `TRUST_PROXY`، `COOKIE_SECURE`.
 
-1. **ساخت از Dockerfile** را انتخاب کن (نه «Node.js» یا «استاتیک» خودکار) و مخزن یا شاخهٔ `main` را وصل کن.
-2. **پورت:** ۸۰. اگر سرویس پورت را خودش تعیین می‌کند و در متغیر `PORT` می‌گذارد، کانتینر همان را گوش می‌دهد.
-3. **بررسی سلامت (Health check / Readiness):** مسیر `/healthz` (پاسخ `ok`).
-4. **منابع:** nginx با فایل استاتیک خیلی سبک است؛ کوچک‌ترین پلن (مثلاً ۲۵۶ مگابایت رم) کافی است. فقط مرحلهٔ ساخت به حدود ۱ گیگابایت رم نیاز دارد که سمت سرویس انجام می‌شود.
-5. **دامنه:** `doping.games` را وصل کن و SSL (معمولاً Let's Encrypt رایگان پنل) را روشن کن.
-6. **متغیر محیطی:** لازم نیست. سایت فعلاً هیچ کلید یا آدرس سروری لازم ندارد.
-
-### اگر ساخت در سرور ایران به npm یا Docker Hub نرسید
-
-- **npm:** آدرس آینهٔ داخلی را به‌عنوان Build Arg بده: `NPM_REGISTRY=https://<آینه>/`
-- **ایمیج‌های پایه (`node:22-alpine` و `nginx:1.27-alpine`):** اگر دانلود نشدند، از آینهٔ Docker که خود سرویس معرفی کرده استفاده کن (خط `FROM` را به آدرس آینه تغییر بده).
-
-## تست روی سیستم خودت
+## ۲. اجرا با Docker Compose (VPS یا هر سروری با Docker)
 
 ```bash
-docker build -t doping-web .
-docker run -p 8080:80 doping-web          # http://localhost:8080
-docker run -e PORT=3000 -p 8080:3000 doping-web
-BASE_URL=http://localhost:8080/ node tests/e2e.cjs   # همان ۹۷ بررسی، روی کانتینر
+cp .env.example .env    # پر کن
+docker compose up -d --build
 ```
 
-این مراحل در محیط توسعه اجرا و تأیید شده‌اند: کانتینر سالم بالا می‌آید، هدرها و کش درست‌اند، و هر ۹۷ بررسی روی کانتینر رد می‌شوند.
+سایت روی پورت ۳۰۰۰ بالا می‌آید. جلویش یک reverse proxy با SSL بگذار (Caddy، nginx یا پنل سرویس). جدول‌های دیتابیس بار اول خودکار ساخته می‌شوند.
 
-## بعد از استقرار
+اگر سرور به رجیستری npm دسترسی ندارد: `NPM_REGISTRY=https://<آینه>/ docker compose build`.
 
-- `https://doping.games/healthz` باید `ok` برگرداند.
-- با Lighthouse روی آدرس واقعی دوباره بنچمارک بگیر (`docs/benchmark.md` روی سرور محلی گرفته شده).
-- اگر CDN جلوی سایت می‌گذاری: `/assets/*` را طولانی کش کن و `index.html` را کش نکن (همان رفتار nginx).
+## ۳. اجرا روی PaaS (مثل لیارا، هم‌روش، آروان یا «گره»)
 
-## محدودیت مهم
+1. یک دیتابیس **PostgreSQL** از خود سرویس بساز و آدرسش را در `DATABASE_URL` بگذار.
+2. اپ جدید از نوع **Docker** بساز و مخزن (شاخه `main`) را وصل کن؛ `Dockerfile` داخل مخزن استفاده می‌شود.
+3. متغیرهای بخش ۱ را در تنظیمات اپ وارد کن.
+4. پورت: ۳۰۰۰ (اگر سرویس `PORT` را خودش می‌دهد، اپ همان را گوش می‌دهد).
+5. Health check: مسیر `/api/healthz`.
+6. منابع: حداقل ۵۱۲ مگابایت رم برای اجرا؛ مرحله build حدود ۱.۵ گیگ رم می‌خواهد.
+7. دامنه و SSL را وصل کن و `APP_URL` را با همان دامنه تنظیم کن.
 
-این استقرار فقط **فرانت‌اند** است:
+فقط **یک** نمونه از اپ کافی است. اگر چند نمونه اجرا کنی، کارهای پس‌زمینه با قفل دیتابیس فقط روی یکی اجرا می‌شوند؛ ولی محدودیت تعداد درخواست (rate limit) هر نمونه جداست.
 
-- داده‌ها (کاربران، روترها، پرداخت‌ها) در مرورگر شبیه‌سازی می‌شوند.
-- تنظیماتی که ادمین ذخیره می‌کند فقط در مرورگر همان ادمین می‌ماند و بازدیدکننده‌ها نمی‌بینند.
-- پنل ادمین رمز ندارد و هر کسی آدرس `#admin` را باز کند می‌بیندش.
+## ۴. بعد از اولین اجرا
 
-پیش از راه‌اندازی عمومی، بک‌اند داخل `backend/` (Next.js، PostgreSQL، Redis) باید مستقر و به فرانت‌اند وصل شود، و ورود ادمین پشت احراز هویت برود.
+1. با `ADMIN_EMAIL` و `ADMIN_PASSWORD` از `/login` وارد شو؛ مستقیم به «مرکز کنترل» می‌روی.
+2. **روترها و نودها → افزودن روتر**: آی‌پی، پورت `www-ssl`، کاربر و رمز API، اینترفیس WireGuard و رنج آی‌پی تانل. بعد «تست اتصال و سینک» را بزن. اولین اتصال موفق، گواهی روتر را پین می‌کند و از آن به بعد هر گواهی دیگری رد می‌شود.
+3. **سرورهای بازی**: هاست، پورت و رمز RCON هر سرور. وضعیت زنده هر ۳۰ ثانیه با A2S خوانده می‌شود.
+4. **تنظیمات سایت**: متن‌ها، قیمت‌ها، بازی‌ها، سوال‌ها، DNS و پیش‌فرض‌های WireGuard.
+5. **فروش و درگاه**: کد تخفیف و روشن/خاموش کردن درگاه‌ها.
+
+## ۵. آماده‌سازی میکروتیک (RouterOS v7)
+
+```
+/certificate add name=api common-name=router-api days-valid=3650
+/certificate sign api
+/ip service set www-ssl certificate=api disabled=no port=443 address=<آی‌پی سرور پنل>/32
+/user group add name=doping-api policy=read,write,api,rest-api,!ftp,!ssh,!telnet,!winbox,!web,!password,!policy,!sensitive
+/user add name=doping-api group=doping-api password=<رمز حداقل ۱۲ کاراکتر> address=<آی‌پی سرور پنل>/32
+/interface wireguard add name=wg-doping listen-port=51820
+/ip address add address=10.10.30.1/24 interface=wg-doping
+```
+
+پنل از طریق همین REST، Peer و Simple Queue هر مشتری را می‌سازد، حجم مصرفی را از شمارنده صف‌ها می‌خواند و وقتی حجم یا زمان تمام شد Peer را غیرفعال می‌کند. آی‌پی‌های DNS در address-list `doping-dns-allowed` ثبت می‌شوند؛ فایروال DNS باید فقط به همین لیست جواب بدهد.
+
+## ۶. پشتیبان‌گیری
+
+- دیتابیس: `docker compose exec db pg_dump -U doping doping > backup.sql`
+- کلید `DOPING_KMS_KEYS` را جدا و امن نگه دار.

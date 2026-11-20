@@ -1,193 +1,125 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import * as D from './data.js';
-import { guessCover } from './covers.js';
+'use client';
+// Client state: the site content and signed-in user rendered by the server, per-visitor preferences
+// (kept on this device), toasts, and `api()`, the one way the browser talks to the backend.
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 const Ctx = createContext(null);
 export const useStore = () => useContext(Ctx);
 
-export const SITE_KEY = 'doping.site.v2';
-const OLD_SITE_KEYS = ['doping.site.v1'];
-/** Saved settings layered over the defaults, so a newer build with new fields still gets them. */
-function loadSite() {
-  const base = D.seedSite();
-  try {
-    const raw = localStorage.getItem(SITE_KEY) ?? OLD_SITE_KEYS.map((k) => localStorage.getItem(k)).find(Boolean) ?? 'null';
-    const saved = JSON.parse(raw);
-    if (!saved) return base;
-    const site = D.migrateSite(saved, base, guessCover);
-    return Object.keys(D.validateSite(site)).length ? base : site;
-  } catch {
-    return base;
-  }
-}
-
-/** Per-visitor choices (ISP, favourite servers, last game tested). Kept on this device only. */
 const PREFS_KEY = 'doping.prefs.v1';
+const basePrefs = { isp: 'mci', favs: [], game: 'cs2', guide: {} };
 function loadPrefs() {
-  const base = { isp: 'mci', favs: [], game: 'cs2', guide: {} };
   try {
-    return { ...base, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') };
+    return { ...basePrefs, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') };
   } catch {
-    return base;
+    return basePrefs;
   }
 }
 
-/**
- * Admin-managed records (game servers, routers, discount codes, payment gateways) also survive a reload.
- * Only their definitions are stored; live numbers (players, CPU, peers) keep being simulated.
- */
-const ADMIN_KEY = 'doping.admin.v1';
-const SERVER_FIELDS = ['id', 'name', 'game', 'mode', 'map', 'max', 'host', 'port', 'vip', 'ac', 'tick', 'status'];
-const ROUTER_FIELDS = ['id', 'name', 'role', 'city', 'host', 'apiPort', 'apiUser', 'version', 'model', 'wg', 'subnet', 'status'];
-const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
-function loadAdmin() {
+const readCookie = (name) => document.cookie.split('; ').find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1) ?? '';
+
+export class ApiError extends Error {
+  constructor(message, status, fields) {
+    super(message);
+    this.status = status;
+    this.fields = fields ?? {};
+  }
+}
+
+/** JSON request with the CSRF header. Throws ApiError with the server's Persian message on failure. */
+export async function api(path, { method = 'GET', body } = {}) {
+  const csrf = decodeURIComponent(readCookie('__Host-dp_csrf') || readCookie('dp_csrf'));
+  let res;
   try {
-    const saved = JSON.parse(localStorage.getItem(ADMIN_KEY) ?? 'null');
-    if (!saved) return {};
-    const out = {};
-    if (Array.isArray(saved.servers)) {
-      out.servers = saved.servers.map((v) => {
-        const players = v.status === 'online' ? D.rint(Math.ceil(v.max * 0.3), Math.max(1, Math.floor(v.max * 0.9))) : 0;
-        return { ping: 12, ...v, players, list: D.roster(players) };
-      });
-    }
-    if (Array.isArray(saved.routers)) {
-      out.routers = saved.routers.map((r) => ({ cpu: 20, ram: 30, peers: 0, queues: 0, handshake: 5, uptime: '1d', lastSync: null, ...r }));
-    }
-    if (Array.isArray(saved.discounts)) out.discounts = saved.discounts;
-    if (Array.isArray(saved.gateways)) out.gateways = saved.gateways;
-    return out;
-  } catch {
-    return {};
-  }
-}
-const adminSnapshot = (s) => JSON.stringify({
-  servers: s.servers.map((v) => pick(v, SERVER_FIELDS)),
-  routers: s.routers.map((r) => pick(r, ROUTER_FIELDS)),
-  discounts: s.discounts,
-  gateways: s.gateways,
-});
-
-const init = () => ({
-  site: loadSite(),
-  prefs: loadPrefs(),
-  rec: null,
-  pingRun: 0,
-  users: D.seedUsers(),
-  routers: D.seedRouters(),
-  servers: D.seedServers(),
-  discounts: D.seedDiscounts(),
-  gateways: D.seedGateways(),
-  invoices: D.seedInvoices(),
-  tickets: D.seedTickets(),
-  logs: D.seedLogs(),
-  ...loadAdmin(),
-  wallet: 185_000,
-  steamId: '76561198412770351',
-  perks: { slot: true, tag: true, skins: false },
-  dnsIps: [{ ip: '5.160.14.92', label: 'خانه · مخابرات', at: Date.now() - 95_000 }],
-  dnsSlots: 2,
-  myKeys: { priv: D.wgKey(), pub: D.wgKey(), psk: D.wgKey(), rotated: Date.now() - 11 * 86_400_000 },
-  exit: 'mct',
-  toasts: [],
-  tick: 0,
-});
-
-const mkLog = (type, level, msg, actor = 'admin', ip = '10.0.0.2') => ({ id: D.uid(), at: Date.now(), type, level, msg, actor, ip });
-
-/** The same rule the backend quota worker applies, run on every simulated poll. */
-function enforce(u, logs) {
-  if (u.status !== 'active') return u;
-  if (u.quota != null && u.up + u.down >= u.quota) {
-    logs.push(mkLog('mikrotik', 'warn', `PATCH /rest/interface/wireguard/peers/${u.peerId} disabled=true · اتمام حجم ${u.username}`, 'quota-worker', '10.0.0.5'));
-    return { ...u, status: 'quota', peer: false, online: false };
-  }
-  return u;
-}
-
-function simulate(s) {
-  const logs = [];
-  const users = s.users.map((u) => {
-    if (u.status !== 'active' || !u.peer || !u.online || u.plan === 'dns') return u;
-    return enforce({ ...u, down: u.down + D.rnd(2, 26) * D.MB, up: u.up + D.rnd(0.3, 3) * D.MB }, logs);
-  });
-  const servers = s.servers.map((v) => {
-    if (v.status !== 'online') return v;
-    const players = Math.max(0, Math.min(v.max, v.players + D.pick([-1, 0, 0, 0, 1])));
-    const list = players > v.list.length ? [...v.list, ...D.roster(1)] : v.list.slice(0, players);
-    return { ...v, players, list, ping: Math.max(8, Math.min(22, v.ping + D.pick([-1, 0, 0, 1]))) };
-  });
-  const routers = s.routers.map((r) =>
-    r.status !== 'online' ? r : {
-      ...r,
-      cpu: Math.max(6, Math.min(93, r.cpu + D.rint(-4, 4))),
-      ram: Math.max(18, Math.min(88, r.ram + D.rint(-1, 1))),
-      handshake: r.handshake > 110 ? D.rint(1, 6) : r.handshake + 3,
+    res = await fetch(path, {
+      method,
+      headers: { Accept: 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' ? { 'X-CSRF-Token': csrf } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin',
+      cache: 'no-store',
     });
-  if (s.tick % 8 === 7) {
-    const r = D.pick(routers.filter((x) => x.role === 'entry' && x.status === 'online'));
-    if (r) logs.push(mkLog('mikrotik', 'info', `GET /rest/queue/simple → 200 (${r.queues} queues, ${D.rint(120, 260)}ms) · ${r.name}`, 'quota-worker', '10.0.0.5'));
+  } catch {
+    throw new ApiError('اتصال به سرور برقرار نشد. اینترنتت رو چک کن.', 0);
   }
-  return { ...s, users, servers, routers, logs: logs.length ? [...logs.reverse(), ...s.logs].slice(0, 200) : s.logs, tick: s.tick + 1 };
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/api/auth')) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.hash)}`;
+    }
+    throw new ApiError(data?.error ?? `خطای ${res.status}`, res.status, data?.fields);
+  }
+  return data;
 }
 
-export function StoreProvider({ children }) {
-  const [s, setS] = useState(init);
+export function StoreProvider({ initial, children }) {
+  const [s, setS] = useState(() => ({
+    site: initial.site,
+    user: initial.user,
+    prefs: basePrefs,
+    rec: null,
+    pingRun: 0,
+    exit: 'mct',
+    panelTab: null,
+    toasts: [],
+  }));
 
+  // Preferences live in this browser only; read them after hydration so server and client HTML match.
   useEffect(() => {
-    const t = setInterval(() => setS(simulate), 3000);
-    return () => clearInterval(t);
+    const prefs = loadPrefs();
+    setS((p) => ({ ...p, prefs }));
   }, []);
-
-  // Settings survive a reload on this device; the accent colour drives the theme variables.
-  useEffect(() => {
-    try { localStorage.setItem(SITE_KEY, JSON.stringify(s.site)); } catch { /* storage is optional */ }
-    const root = document.documentElement.style;
-    root.setProperty('--color-brand', s.site.accent);
-    root.setProperty('--color-brand2', `color-mix(in srgb, ${s.site.accent} 82%, white)`);
-  }, [s.site]);
-
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(s.prefs)); } catch { /* storage is optional */ }
   }, [s.prefs]);
 
-  // Persist admin records only when their definitions change, not on every simulated tick.
-  const lastAdmin = useRef('');
-  const snapshot = adminSnapshot(s);
+  // The accent colour drives the theme variables (also rendered on <html> by the server).
   useEffect(() => {
-    if (snapshot === lastAdmin.current) return;
-    if (lastAdmin.current) {
-      try { localStorage.setItem(ADMIN_KEY, snapshot); } catch { /* storage is optional */ }
-    }
-    lastAdmin.current = snapshot;
-  }, [snapshot]);
+    const root = document.documentElement.style;
+    root.setProperty('--color-brand', s.site.accent);
+    root.setProperty('--color-brand2', `color-mix(in srgb, ${s.site.accent} 82%, white)`);
+  }, [s.site.accent]);
 
   const set = useCallback((fn) => setS((prev) => ({ ...prev, ...(typeof fn === 'function' ? fn(prev) : fn) })), []);
 
-  const api = useMemo(() => {
-    const toast = (msg, tone = 'ok') => {
-      const id = D.uid();
-      setS((p) => ({ ...p, toasts: [...p.toasts, { id, msg, tone }] }));
-      setTimeout(() => setS((p) => ({ ...p, toasts: p.toasts.filter((t) => t.id !== id) })), 3800);
-    };
-    const log = (type, level, msg, actor, ip) => setS((p) => ({ ...p, logs: [mkLog(type, level, msg, actor, ip), ...p.logs].slice(0, 200) }));
-    /** Immutable update of one row in a list, re-running quota enforcement for users. */
-    const patch = (key, id, fn) =>
-      setS((p) => {
-        const logs = [];
-        const list = p[key].map((x) => {
-          if (x.id !== id) return x;
-          const next = { ...x, ...fn(x) };
-          return key === 'users' ? enforce(next, logs) : next;
-        });
-        return { ...p, [key]: list, logs: logs.length ? [...logs, ...p.logs] : p.logs };
-      });
-    const invoice = (title, amount, gateway, status = 'paid') =>
-      setS((p) => ({ ...p, invoices: [{ id: `INV-${D.rint(48300, 49999)}`, at: Date.now(), title, amount, gateway, status }, ...p.invoices] }));
-    return { toast, log, patch, invoice };
+  const toast = useCallback((msg, tone = 'ok') => {
+    const id = Math.random().toString(36).slice(2);
+    setS((p) => ({ ...p, toasts: [...p.toasts, { id, msg, tone }] }));
+    setTimeout(() => setS((p) => ({ ...p, toasts: p.toasts.filter((t) => t.id !== id) })), 4200);
   }, []);
 
-  const me = s.users[0];
-  const value = useMemo(() => ({ s, set, me, ...api }), [s, set, me, api]);
+  /** Re-reads the wallet and account after a payment or profile change. */
+  const refreshUser = useCallback(async () => {
+    try {
+      const me = await api('/api/me');
+      setS((p) => ({ ...p, user: p.user ? { ...p.user, ...me.user } : p.user }));
+      return me;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const value = useMemo(() => ({ s, set, toast, api, refreshUser }), [s, set, toast, refreshUser]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** Fetches a JSON resource and keeps it fresh; `reload()` after a write. */
+export function useResource(url, { interval = 0 } = {}) {
+  const [state, setState] = useState({ data: null, error: null, loading: true });
+  const load = useCallback(async () => {
+    try {
+      const data = await api(url);
+      setState({ data, error: null, loading: false });
+      return data;
+    } catch (error) {
+      setState((p) => ({ ...p, error, loading: false }));
+      return null;
+    }
+  }, [url]);
+  useEffect(() => {
+    load();
+    if (!interval) return undefined;
+    const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, interval);
+    return () => clearInterval(t);
+  }, [load, interval]);
+  return { ...state, reload: load, setData: (fn) => setState((p) => ({ ...p, data: typeof fn === 'function' ? fn(p.data) : fn })) };
 }

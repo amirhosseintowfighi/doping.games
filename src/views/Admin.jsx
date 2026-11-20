@@ -1,128 +1,140 @@
-import { useEffect, useRef, useState } from 'react';
+'use client';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity, BadgePercent, Ban, Banknote, Code2, CreditCard, Crosshair, Pause, Pencil, Play, Plus, Power,
-  RefreshCw, RotateCcw, Router, ScrollText, Search, SlidersHorizontal, Send, Server, ShieldAlert, Terminal, Trash2, UserX, Users,
+  Activity, BadgePercent, Ban, Banknote, Code2, CreditCard, Crosshair, LifeBuoy, Pause, Pencil, Play, Plus, Power,
+  RefreshCw, RotateCcw, Router, ScrollText, Search, SlidersHorizontal, Send, ShieldAlert, Terminal, Trash2, UserX, Users,
 } from 'lucide-react';
-import { useStore } from '../store.jsx';
+import { useResource, useStore } from '../store.jsx';
 import Settings from './Settings.jsx';
 import { ArcMeter, ModeEmblem, RouteMap } from '../art.jsx';
 import { Badge, Btn, Card, cx, Dot, Drawer, Field, Modal, Mono, Progress, RailLayout, Stat, Toggle } from '../ui.jsx';
-import { clock, CS2_MAPS, daysLeft, dnsSlots, durations, fa, GB, gb, isIPv4, MODES, pingTiers, priceOf, rint, roster, tierLabel, toman, uid } from '../data.js';
+import { clock, CS2_MAPS, daysLeft, dnsSlots, durations, fa, faDate, GB, gb, isIPv4, MODES, pingTiers, priceOf, tierLabel, toman } from '../data.js';
 
-const U_STATUS = { active: ['Active', 'ok'], quota: ['Quota Exceeded', 'bad'], expired: ['Expired', 'warn'], disabled: ['Disabled', 'mute'] };
+/** Overview (routers, game servers, counters) shared by the tabs; `reload()` after a write. */
+const AdminCtx = createContext(null);
+const useAdmin = () => useContext(AdminCtx);
+
+/** Runs an API write, toasts the result and reloads. Returns the response or null. */
+function useAct() {
+  const { api, toast } = useStore();
+  return useCallback(async (path, method, body, ok) => {
+    try {
+      const r = await api(path, { method, body });
+      if (ok) toast(ok, method === 'DELETE' ? 'warn' : 'ok');
+      return r ?? {};
+    } catch (e) {
+      toast(e.message, 'bad');
+      return null;
+    }
+  }, [api, toast]);
+}
+
+const U_STATUS = { active: ['Active', 'ok'], quota: ['Quota Exceeded', 'bad'], expired: ['Expired', 'warn'], disabled: ['Disabled', 'mute'], none: ['No plan', 'mute'] };
 
 /* ───────────────────────── MikroTik cluster ───────────────────────── */
 
-const emptyRouter = { name: '', role: 'entry', city: '', host: '', apiPort: 8443, apiUser: 'doping-api', password: '', wg: 'wg-doping', subnet: '10.10.30.0/24' };
+const emptyRouter = { name: '', role: 'entry', city: '', host: '', apiPort: 443, apiUser: 'doping-api', password: '', wg: 'wg-doping', subnet: '10.10.30.0/24', endpoint: '', fingerprint: '', enabled: true };
+const routerBody = (r, extra = {}) => ({
+  name: r.name, role: r.role, city: r.city ?? '', host: r.host, apiPort: +r.apiPort, apiUser: r.apiUser, password: '', wg: r.wg, subnet: r.subnet,
+  endpoint: r.endpoint ?? '', fingerprint: r.fingerprint ?? '', enabled: r.enabled !== false, ...extra,
+});
 
 function RouterForm({ initial, onClose }) {
-  const { set, toast, log } = useStore();
+  const { reload } = useAdmin();
+  const act = useAct();
   const editing = !!initial.id;
   const [f, setF] = useState({ ...emptyRouter, ...initial, password: '' });
   const [touched, setTouched] = useState(false);
+  const [server, setServer] = useState({});
+  const [busy, setBusy] = useState(false);
   const up = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const errs = {
     name: /^[A-Za-z0-9-]{3,24}$/.test(f.name) ? '' : '۳ تا ۲۴ کاراکتر لاتین، عدد یا خط تیره.',
-    host: isIPv4(f.host) ? '' : 'آی‌پی نسخه ۴ معتبر وارد کن.',
+    host: isIPv4(f.host) || /^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(f.host) ? '' : 'آی‌پی یا هاست معتبر وارد کن.',
     apiPort: +f.apiPort >= 1 && +f.apiPort <= 65535 ? '' : 'پورت بین 1 تا 65535.',
     apiUser: /^[a-zA-Z0-9_.-]{3,32}$/.test(f.apiUser) ? '' : 'نام کاربری API نامعتبره.',
     password: (editing && !f.password) || f.password.length >= 12 ? '' : 'حداقل ۱۲ کاراکتر.',
     wg: /^[a-zA-Z0-9_-]{2,15}$/.test(f.wg) ? '' : 'نام اینترفیس نامعتبره.',
-    subnet: /^(10|172|192)\.\d{1,3}\.\d{1,3}\.0\/(2\d|30)$/.test(f.subnet) ? '' : 'مثل 10.10.30.0/24',
+    subnet: /^(10|172|192)\.\d{1,3}\.\d{1,3}\.0\/(1[6-9]|2\d|30)$/.test(f.subnet) ? '' : 'مثل 10.10.30.0/24',
+    endpoint: !f.endpoint || /^[a-z0-9.-]+:\d{2,5}$/i.test(f.endpoint) ? '' : 'به شکل host:port',
+    ...server,
   };
   const valid = Object.values(errs).every((e) => !e);
   const e = (k) => (touched ? errs[k] : '');
 
-  const save = () => {
+  const save = async () => {
     setTouched(true);
     if (!valid) return;
-    const { password, ...rest } = f;
-    const row = { ...rest, apiPort: +f.apiPort, city: f.city || (f.role === 'entry' ? 'ایران' : 'خارج') };
-    if (editing) {
-      set((p) => ({ routers: p.routers.map((r) => (r.id === row.id ? { ...r, ...row } : r)) }));
-    } else {
-      set((p) => ({ routers: [...p.routers, { ...row, id: `r${uid()}`, version: '7.19.4', model: 'CHR P1', cpu: 9, ram: 22, peers: 0, queues: 0, handshake: 0, status: 'online', lastSync: null, uptime: '0d' }] }));
-    }
-    log('admin', 'info', `router.${editing ? 'update' : 'create'} ${row.name} · ${password ? 'رمز API با AES-256-GCM ذخیره شد' : 'رمز بدون تغییر'}`);
-    toast(editing ? 'روتر به‌روزرسانی شد.' : 'روتر اضافه شد. یک‌بار «تست اتصال و سینک» رو بزن.');
-    onClose();
+    setBusy(true);
+    const body = { ...routerBody(f), password: f.password };
+    const r = await act(editing ? `/api/admin/routers/${f.id}` : '/api/admin/routers', editing ? 'PATCH' : 'POST', body,
+      editing ? 'روتر به‌روزرسانی شد.' : 'روتر اضافه شد. حالا «تست اتصال و سینک» رو بزن.');
+    setBusy(false);
+    if (r) { await reload(); onClose(); }
   };
 
   return (
     <Modal
       open onClose={onClose} wide title={editing ? `ویرایش ${initial.name}` : 'افزودن روتر میکروتیک'}
-      footer={<><Btn variant="ghost" onClick={onClose}>انصراف</Btn><Btn onClick={save}>{editing ? 'ذخیره تغییرات' : 'افزودن روتر'}</Btn></>}
+      footer={<><Btn variant="ghost" onClick={onClose}>انصراف</Btn><Btn onClick={save} busy={busy}>{editing ? 'ذخیره تغییرات' : 'افزودن روتر'}</Btn></>}
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="نام نود" error={e('name')}><input id="rt-name" dir="ltr" value={f.name} onChange={up('name')} placeholder="THR-EDGE-03" className="field mono" /></Field>
+        <Field label="نام نود" error={e('name')}><input id="rt-name" dir="ltr" value={f.name} onChange={(x) => { up('name')(x); setServer({}); }} placeholder="THR-EDGE-03" className="field mono" /></Field>
         <Field label="نقش">
           <select id="rt-role" value={f.role} onChange={up('role')} className="field">
             <option value="entry">ورودی ایران (Entry)</option>
             <option value="exit">خروجی خارج (Exit)</option>
           </select>
         </Field>
-        <Field label="آی‌پی روتر" error={e('host')}><input id="rt-host" dir="ltr" value={f.host} onChange={up('host')} placeholder="203.0.113.40" className="field mono" /></Field>
-        <Field label="پورت REST API / SSL" error={e('apiPort')}><input id="rt-port" dir="ltr" inputMode="numeric" value={f.apiPort} onChange={up('apiPort')} className="field mono" /></Field>
+        <Field label="آی‌پی یا هاست روتر" error={e('host')}><input id="rt-host" dir="ltr" value={f.host} onChange={up('host')} placeholder="203.0.113.40" className="field mono" /></Field>
+        <Field label="پورت www-ssl (REST)" error={e('apiPort')}><input id="rt-port" dir="ltr" inputMode="numeric" value={f.apiPort} onChange={up('apiPort')} className="field mono" /></Field>
         <Field label="نام کاربری API" error={e('apiUser')}><input id="rt-user" dir="ltr" value={f.apiUser} onChange={up('apiUser')} className="field mono" /></Field>
-        <Field label="رمز API" error={e('password')} hint={editing ? 'خالی بذار تا رمز فعلی بمونه.' : 'رمزگذاری‌شده ذخیره می‌شه و دیگه نمایش داده نمی‌شه.'}>
+        <Field label="رمز API" error={e('password')} hint={editing ? 'خالی بذار تا رمز فعلی بمونه.' : 'با AES-256-GCM رمزگذاری و ذخیره می‌شه و دیگه نمایش داده نمی‌شه.'}>
           <input id="rt-pass" dir="ltr" type="password" autoComplete="new-password" value={f.password} onChange={up('password')} className="field mono" />
         </Field>
         <Field label="اینترفیس WireGuard" error={e('wg')}><input id="rt-wg" dir="ltr" value={f.wg} onChange={up('wg')} className="field mono" /></Field>
-        <Field label="Subnet Pool" error={e('subnet')}><input id="rt-subnet" dir="ltr" value={f.subnet} onChange={up('subnet')} className="field mono" /></Field>
-        <Field label="محل / دیتاسنتر" className="sm:col-span-2"><input id="rt-city" value={f.city} onChange={up('city')} placeholder="تهران · آسیاتک" className="field" /></Field>
+        <Field label="Subnet Pool تانل" error={e('subnet')}><input id="rt-subnet" dir="ltr" value={f.subnet} onChange={up('subnet')} className="field mono" /></Field>
+        <Field label="Endpoint عمومی کلاینت‌ها" error={e('endpoint')} hint="خالی = هاست روتر + listen-port اینترفیس، بعد از سینک."><input id="rt-endpoint" dir="ltr" value={f.endpoint} onChange={up('endpoint')} placeholder="thr1.doping.games:51820" className="field mono" /></Field>
+        <Field label="محل / دیتاسنتر"><input id="rt-city" value={f.city} onChange={up('city')} placeholder="تهران · آسیاتک" className="field" /></Field>
+        <Field label="اثر انگشت SHA-256 گواهی (اختیاری)" className="sm:col-span-2" hint="خالی بذاری، اولین سینک موفق گواهی رو پین می‌کنه و از اون به بعد هر گواهی دیگه‌ای رد می‌شه.">
+          <input id="rt-fp" dir="ltr" value={f.fingerprint} onChange={up('fingerprint')} placeholder="AB:CD:…" className="field mono text-xs" />
+        </Field>
       </div>
     </Modal>
   );
 }
 
 function SyncModal({ router, onClose }) {
-  const { s, set, log } = useStore();
+  const { reload } = useAdmin();
+  const { api } = useStore();
   const [lines, setLines] = useState([]);
   const [done, setDone] = useState(false);
   const [run, setRun] = useState(0);
-  const snap = useRef(null);
 
   useEffect(() => {
-    const r = s.routers.find((x) => x.id === router.id) ?? router;
-    const peers = r.role === 'entry' ? s.users.filter((u) => u.router === r.id).length + Math.max(0, r.peers - 14) : r.peers;
-    snap.current = { peers, queues: r.role === 'entry' ? peers : 0 };
-    const off = r.status !== 'online';
-    const script = off
-      ? [[300, 'dim', `→ CONNECT ${r.host}:${r.apiPort}`], [2200, 'bad', '✗ timeout after 8000ms · روتر جواب نمی‌ده']]
-      : [
-          [250, 'dim', `→ CONNECT ${r.host}:${r.apiPort} (TLS 1.2)`],
-          [550, 'ok', '✓ certificate fingerprint pinned · sha256 match'],
-          [850, 'dim', '→ GET /rest/system/resource'],
-          [1150, 'out', `  200 · RouterOS ${r.version} · ${r.model} · cpu ${r.cpu}% · uptime ${r.uptime}`],
-          [1450, 'dim', `→ GET /rest/interface/wireguard/peers?interface=${r.wg}`],
-          [1800, 'out', `  200 · ${peers} peers · ${rint(60, 80)}% handshake < 3m`],
-          [2100, 'dim', '→ GET /rest/queue/simple?.proplist=.id,name,target,bytes'],
-          [2450, 'out', `  200 · ${snap.current.queues} queues · ${rint(140, 260)}ms`],
-          [2750, 'dim', '→ reconcile panel ⇄ router'],
-          [3050, 'out', '  0 missing peers · 0 orphan queues · counters merged'],
-          [3300, 'ok', '✓ sync complete'],
-        ];
-    setLines([]);
+    let alive = true;
+    setLines([{ tone: 'dim', text: `→ sync ${router.name} …`, at: Date.now() }]);
     setDone(false);
-    const timers = script.map(([t, tone, text]) => setTimeout(() => setLines((l) => [...l, { tone, text, at: clock() }]), t));
-    const end = setTimeout(() => {
-      setDone(true);
-      if (!off) set((p) => ({ routers: p.routers.map((x) => (x.id === r.id ? { ...x, peers: snap.current.peers, queues: snap.current.queues, lastSync: Date.now() } : x)) }));
-      log('mikrotik', off ? 'critical' : 'info', off ? `sync failed · ${r.name} · timeout` : `sync OK · ${r.name} · ${snap.current.peers} peers / ${snap.current.queues} queues`);
-    }, script.at(-1)[0] + 200);
-    return () => { timers.forEach(clearTimeout); clearTimeout(end); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run, router.id]);
+    api(`/api/admin/routers/${router.id}/sync`, { method: 'POST' })
+      .then((r) => {
+        if (!alive) return;
+        // Reveal the real transcript line by line so it reads like a console.
+        r.lines.forEach((l, i) => setTimeout(() => alive && setLines((x) => [...x, l]), 120 * (i + 1)));
+        setTimeout(() => { if (alive) { setDone(true); reload(); } }, 120 * (r.lines.length + 1));
+      })
+      .catch((e) => { if (alive) { setLines((x) => [...x, { tone: 'bad', text: `✗ ${e.message}`, at: Date.now() }]); setDone(true); } });
+    return () => { alive = false; };
+  }, [run, router.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Modal
       open onClose={onClose} wide title={`تست اتصال و سینک · ${router.name}`}
       footer={<><Btn variant="ghost" icon={RotateCcw} disabled={!done} onClick={() => setRun((n) => n + 1)}>اجرای دوباره</Btn><Btn onClick={onClose}>بستن</Btn></>}
     >
-      <div dir="ltr" className="mono min-h-64 well p-4 text-left text-xs leading-6" aria-live="polite">
+      <div dir="ltr" className="mono min-h-64 well p-4 text-left text-xs leading-6" aria-live="polite" data-sync-log>
         {lines.map((l, i) => (
           <div key={i} className={cx(l.tone === 'ok' && 'text-ok', l.tone === 'bad' && 'text-brand2', l.tone === 'dim' && 'text-silver', l.tone === 'out' && 'text-white')}>
-            <span className="text-zinc-600">{l.at} </span>{l.text}
+            <span className="text-zinc-600">{clock(l.at)} </span>{l.text}
           </div>
         ))}
         {!done && <span className="inline-block h-4 w-2 animate-pulse bg-brand2 align-middle" />}
@@ -132,86 +144,99 @@ function SyncModal({ router, onClose }) {
 }
 
 function Routers() {
-  const { s, set, toast, log } = useStore();
+  const { o, reload } = useAdmin();
+  const act = useAct();
   const [form, setForm] = useState(null);
   const [sync, setSync] = useState(null);
   const [del, setDel] = useState(null);
-  const group = (role, title) => (
-    <div>
-      <div className="mb-4 flex items-center gap-3"><span className="text-sm font-black">{title}</span><span className="hairline flex-1" /></div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {s.routers.filter((r) => r.role === role).map((r) => {
-          const on = r.status === 'online';
-          return (
-            <Card key={r.id} className={cx('flex flex-col gap-5 p-5', !on && 'border-red-500/50')}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <Mono className="block truncate text-base font-bold">{r.name}</Mono>
-                  <div className="truncate text-xs text-silver">{r.city}</div>
+  const routers = o.routers;
+  const group = (role, title) => {
+    const list = routers.filter((r) => r.role === role);
+    return (
+      <div>
+        <div className="mb-4 flex items-center gap-3"><span className="text-sm font-black">{title}</span><span className="hairline flex-1" /></div>
+        {!list.length && <p className="rounded-2xl border border-dashed border-white/15 p-6 text-center text-sm text-silver">روتری با این نقش تعریف نشده.</p>}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {list.map((r) => {
+            const on = r.status === 'online';
+            return (
+              <Card key={r.id} className={cx('flex flex-col gap-5 p-5', r.status === 'offline' && 'border-red-500/50', !r.enabled && 'opacity-60')}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Mono className="block truncate text-base font-bold">{r.name}</Mono>
+                    <div className="truncate text-xs text-silver">{r.city}</div>
+                  </div>
+                  <Badge tone={!r.enabled ? 'mute' : on ? 'ok' : r.status === 'offline' ? 'bad' : 'warn'}>{!r.enabled ? 'Disabled' : on ? <><Dot /> Online</> : r.status === 'offline' ? 'Offline' : 'Not synced'}</Badge>
                 </div>
-                <Badge tone={on ? 'ok' : 'bad'}>{on ? <><Dot /> Online</> : 'Offline'}</Badge>
-              </div>
-              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                {[['IP', r.host], ['API Port', r.apiPort], ['RouterOS', `v${r.version}`], ['Interface', r.wg], ['Subnet', r.subnet], ['Model', r.model]].map(([k, v]) => (
-                  <div key={k} className="min-w-0">
-                    <dt><Mono className="text-[11px] text-zinc-500">{k}</Mono></dt>
-                    <dd><Mono className="block truncate font-bold">{v}</Mono></dd>
-                  </div>
-                ))}
-              </dl>
-              <div className="grid grid-cols-2 gap-6">
-                <ArcMeter label="CPU" value={on ? r.cpu : 0} />
-                <ArcMeter label="RAM" value={on ? r.ram : 0} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                {[['WG Peers', r.peers], ['Queues', r.queues], ['Handshake', on ? `${r.handshake}s` : '—']].map(([k, v]) => (
-                  <div key={k} className="well py-2">
-                    <Mono className={cx('block text-sm font-black', k === 'Handshake' && on && (r.handshake < 120 ? 'text-ok' : 'text-warn'))}>{v}</Mono>
-                    <Mono className="text-[11px] text-silver">{k}</Mono>
-                  </div>
-                ))}
-              </div>
-              <div className="text-[11px] text-zinc-500">آخرین سینک: <Mono>{r.lastSync ? clock(r.lastSync) : 'never'}</Mono></div>
-              <div className="mt-auto flex flex-wrap gap-2">
-                <Btn size="sm" icon={RefreshCw} className="w-full min-[360px]:w-auto min-[360px]:flex-1" onClick={() => setSync(r)}>تست اتصال و سینک میکروتیک</Btn>
-                <Btn size="sm" variant="ghost" icon={Pencil} aria-label={`ویرایش ${r.name}`} onClick={() => setForm(r)} />
-                <Btn
-                  size="sm" variant="ghost" icon={Power} aria-label={on ? 'شبیه‌سازی قطعی' : 'برگرداندن به مدار'} title={on ? 'شبیه‌سازی قطعی نود' : 'برگرداندن به مدار'}
-                  onClick={() => { set((p) => ({ routers: p.routers.map((x) => (x.id === r.id ? { ...x, status: on ? 'offline' : 'online' } : x)) })); log('mikrotik', on ? 'critical' : 'info', `${r.name} ${on ? 'unreachable' : 'back online'}`); }}
-                />
-                <Btn size="sm" variant="danger" icon={Trash2} aria-label={`حذف ${r.name}`} onClick={() => setDel(r)} />
-              </div>
-            </Card>
-          );
-        })}
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  {[['Host', r.host], ['API Port', r.apiPort], ['RouterOS', r.version === '—' ? '—' : `v${r.version}`], ['Interface', r.wg], ['Subnet', r.subnet], ['Model', r.model]].map(([k, v]) => (
+                    <div key={k} className="min-w-0">
+                      <dt><Mono className="text-[11px] text-zinc-500">{k}</Mono></dt>
+                      <dd><Mono className="block truncate font-bold">{v}</Mono></dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="grid grid-cols-2 gap-6">
+                  <ArcMeter label="CPU" value={on ? r.cpu : 0} />
+                  <ArcMeter label="RAM" value={on ? r.ram : 0} />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[['WG Peers', r.peers], ['Queues', r.queues], ['Uptime', on ? r.uptime : '—']].map(([k, v]) => (
+                    <div key={k} className="well py-2">
+                      <Mono className="block truncate px-1 text-sm font-black">{v}</Mono>
+                      <Mono className="text-[11px] text-silver">{k}</Mono>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1 text-[11px] text-zinc-500">
+                  <div>آخرین سینک: <Mono>{r.lastSync ? `${faDate(r.lastSync)} ${clock(r.lastSync)}` : 'never'}</Mono></div>
+                  {r.fingerprint && <div className="truncate">TLS pin: <Mono>{r.fingerprint.slice(0, 29)}…</Mono></div>}
+                  {r.lastError && <div className="text-brand2" dir="auto">{r.lastError}</div>}
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <Btn size="sm" icon={RefreshCw} className="w-full min-[360px]:w-auto min-[360px]:flex-1" disabled={!r.enabled} onClick={() => setSync(r)}>تست اتصال و سینک میکروتیک</Btn>
+                  <Btn size="sm" variant="ghost" icon={Pencil} aria-label={`ویرایش ${r.name}`} onClick={() => setForm(r)} />
+                  <Btn
+                    size="sm" variant="ghost" icon={Power} aria-label={r.enabled ? `غیرفعال کردن ${r.name}` : `فعال کردن ${r.name}`} title={r.enabled ? 'خارج کردن از مدار (بدون حذف)' : 'برگرداندن به مدار'}
+                    onClick={async () => { if (await act(`/api/admin/routers/${r.id}`, 'PATCH', routerBody(r, { enabled: !r.enabled }), r.enabled ? 'روتر از مدار خارج شد.' : 'روتر به مدار برگشت.')) reload(); }}
+                  />
+                  <Btn size="sm" variant="danger" icon={Trash2} aria-label={`حذف ${r.name}`} onClick={() => setDel(r)} />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+  const live = routers.filter((r) => r.status === 'online').length;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-silver">کلاستر RouterOS v7 · اتصال پنل فقط از طریق REST روی TLS با گواهی پین‌شده.</p>
+        <p className="text-sm text-silver">کلاستر RouterOS v7 · پنل فقط از طریق REST روی TLS با گواهی پین‌شده به روترها وصل می‌شه.</p>
         <Btn icon={Plus} onClick={() => setForm({})}>افزودن روتر</Btn>
       </div>
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between px-6 pt-5">
-          <span className="text-sm font-black">توپولوژی زنده کلاستر</span>
-          <Badge tone={s.routers.every((r) => r.status === 'online') ? 'ok' : 'bad'}><Dot tone={s.routers.every((r) => r.status === 'online') ? 'ok' : 'bad'} /> {fa(s.routers.filter((r) => r.status === 'online').length)} از {fa(s.routers.length)} نود در مدار</Badge>
-        </div>
-        <div className="overflow-x-auto"><RouteMap
-          className="block w-full min-w-[620px]"
-          status={Object.fromEntries(s.routers.filter((r) => /^(THR|SHZ|MCT|DXB|FRA)/.test(r.name)).map((r) => [r.name.slice(0, 3).toLowerCase(), { tone: r.status !== 'online' ? 'bad' : r.cpu >= 85 ? 'warn' : 'ok', sub: r.status === 'online' ? `${r.peers} peers · ${r.cpu}%` : 'OFFLINE' }]))}
-        /></div>
-      </Card>
+      {routers.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between px-6 pt-5">
+            <span className="text-sm font-black">توپولوژی زنده کلاستر</span>
+            <Badge tone={live === routers.length ? 'ok' : 'bad'}><Dot tone={live === routers.length ? 'ok' : 'bad'} /> {fa(live)} از {fa(routers.length)} نود در مدار</Badge>
+          </div>
+          <div className="overflow-x-auto"><RouteMap
+            className="block w-full min-w-[620px]"
+            status={Object.fromEntries(routers.filter((r) => /^(THR|SHZ|MCT|DXB|FRA)/i.test(r.name)).map((r) => [r.name.slice(0, 3).toLowerCase(), { tone: r.status !== 'online' ? 'bad' : r.cpu >= 85 ? 'warn' : 'ok', sub: r.status === 'online' ? `${r.peers} peers · ${r.cpu}%` : 'OFFLINE' }]))}
+          /></div>
+        </Card>
+      )}
       {group('entry', 'روترهای ورودی ایران (Entry)')}
       {group('exit', 'روترهای خروجی عمان / امارات / اروپا (Exit)')}
       {form && <RouterForm initial={form} onClose={() => setForm(null)} />}
       {sync && <SyncModal router={sync} onClose={() => setSync(null)} />}
       <Modal
         open={!!del} onClose={() => setDel(null)} title="حذف روتر" icon={Trash2}
-        footer={<><Btn variant="ghost" onClick={() => setDel(null)}>انصراف</Btn><Btn variant="danger" onClick={() => { set((p) => ({ routers: p.routers.filter((x) => x.id !== del.id) })); log('admin', 'warn', `router.delete ${del.name}`); toast('روتر از کلاستر حذف شد.', 'warn'); setDel(null); }}>حذف {del?.name}</Btn></>}
+        footer={<><Btn variant="ghost" onClick={() => setDel(null)}>انصراف</Btn><Btn variant="danger" onClick={async () => { if (await act(`/api/admin/routers/${del.id}`, 'DELETE', undefined, 'روتر از کلاستر حذف شد.')) reload(); setDel(null); }}>حذف {del?.name}</Btn></>}
       >
-        <p className="text-sm leading-7 text-silver">روتر <Mono className="font-bold text-white">{del?.name}</Mono> از پنل حذف می‌شه. تنظیمات روی خود میکروتیک دست‌نخورده می‌مونه و کاربرهاش باید به نود دیگه‌ای منتقل بشن.</p>
+        <p className="text-sm leading-7 text-silver">روتر <Mono className="font-bold text-white">{del?.name}</Mono> از پنل حذف می‌شه. تنظیمات روی خود میکروتیک دست‌نخورده می‌مونه و کاربرهاش با سینک بعدی به نود ورودی دیگه‌ای منتقل می‌شن.</p>
       </Modal>
     </div>
   );
@@ -220,47 +245,35 @@ function Routers() {
 /* ───────────────────────── Users & quota ───────────────────────── */
 
 function Raw({ u, onClose }) {
+  const sub = u.sub;
   const raw = {
-    '/interface/wireguard/peers': { '.id': u.peerId, interface: 'wg-doping', 'public-key': u.pubkey, 'allowed-address': `${u.ip}/32`, comment: `doping:${u.id}`, disabled: String(!u.peer), 'last-handshake': u.online ? '14s' : 'never' },
-    '/queue/simple': { '.id': u.queueId, name: `dp-${u.id}`, target: `${u.ip}/32`, 'max-limit': '20M/100M', bytes: `${Math.round(u.up)}/${Math.round(u.down)}`, comment: `doping:${u.id} quota=${u.quota ?? 'unlimited'}`, disabled: 'false' },
+    '/interface/wireguard/peers': { '.id': sub.peerId ?? '(not provisioned)', 'public-key': sub.pubkey, 'allowed-address': sub.ip ? `${sub.ip}/32` : null, comment: `doping:${sub.id}`, disabled: String(sub.status !== 'active') },
+    '/queue/simple': { '.id': sub.queueId ?? '(not provisioned)', name: `dp-${sub.id}`, target: sub.ip ? `${sub.ip}/32` : null, 'max-limit': '20M/100M', comment: `doping:${sub.id} quota=${sub.quota ?? 'unlimited'}` },
+    panel: { usedUp: sub.up, usedDown: sub.down, quotaBytes: sub.quota, expires: new Date(sub.expires).toISOString(), router: sub.router, provisionError: sub.provisionError },
   };
   return (
-    <Modal open onClose={onClose} wide icon={Code2} title={`MikroTik Raw Rule · ${u.username}`}>
+    <Modal open onClose={onClose} wide icon={Code2} title={`MikroTik Rule · ${u.username}`}>
       <pre dir="ltr" className="mono overflow-x-auto well p-4 text-left text-xs leading-6 text-zinc-300">{JSON.stringify(raw, null, 2)}</pre>
-      <p className="mt-3 text-xs text-silver">خروجی خام REST از <Mono>THR-EDGE-01</Mono>. شمارنده <Mono>bytes</Mono> به‌صورت <Mono>upload/download</Mono> است.</p>
+      <p className="mt-3 text-xs text-silver">قانون‌هایی که پنل روی <Mono>{sub.router ?? '—'}</Mono> نگه می‌داره. شمارنده‌ها هر دور quota-worker از <Mono>/queue/simple</Mono> خونده می‌شن.</p>
     </Modal>
   );
 }
 
-function UsersTable() {
-  const { s, patch, toast, log } = useStore();
+function UsersTable({ role }) {
+  const { s } = useStore();
+  const act = useAct();
+  const users = useResource('/api/admin/users', { interval: 30_000 });
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const [raw, setRaw] = useState(null);
-  const rows = s.users
-    .filter((u) => filter === 'all' || u.status === filter)
-    .filter((u) => `${u.username} ${u.email} ${u.ip}`.toLowerCase().includes(q.trim().toLowerCase()));
-  const act = {
-    add: (u) => {
-      if (u.quota == null) return toast('این کاربر پلن نامحدود داره.', 'warn');
-      patch('users', u.id, (x) => ({ quota: x.quota + 5 * GB, ...(x.status === 'quota' ? { status: 'active', peer: true } : {}) }));
-      log('mikrotik', 'info', `quota +5GB · ${u.username} · PATCH /rest/queue/simple/${u.queueId}`);
-      toast(`۵ گیگ به ${u.username} اضافه شد.`);
-    },
-    reset: (u) => {
-      patch('users', u.id, (x) => ({ up: 0, down: 0, ...(x.status === 'quota' ? { status: 'active', peer: true } : {}) }));
-      log('mikrotik', 'warn', `POST /rest/queue/simple/reset-counters .id=${u.queueId} · ${u.username}`);
-      toast(`شمارنده صف ${u.username} صفر شد.`, 'warn');
-    },
-    toggle: (u) => {
-      const on = !u.peer;
-      if (on && u.status === 'quota') return toast('حجم این کاربر تموم شده؛ اول حجم اضافه کن.', 'warn');
-      if (on && u.status === 'expired') return toast('اشتراک منقضی شده؛ اول تمدید لازمه.', 'warn');
-      patch('users', u.id, () => ({ peer: on, status: on ? 'active' : 'disabled', online: false }));
-      log('mikrotik', on ? 'info' : 'warn', `PATCH /rest/interface/wireguard/peers/${u.peerId} disabled=${!on} · ${u.username}`);
-      toast(on ? `Peer ${u.username} فعال شد.` : `Peer ${u.username} غیرفعال شد.`, on ? 'ok' : 'warn');
-    },
-  };
+  const [edit, setEdit] = useState(null);
+  const all = users.data ?? [];
+  const st = (u) => u.sub?.status ?? 'none';
+  const rows = all
+    .filter((u) => filter === 'all' || st(u) === filter)
+    .filter((u) => `${u.username} ${u.email} ${u.sub?.ip ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const run = async (u, body, ok) => { if (await act(`/api/admin/users/${u.id}`, 'POST', body, ok)) users.reload(); };
+  const admin = role === 'admin';
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -269,9 +282,9 @@ function UsersTable() {
           <input id="usr-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="نام کاربری، ایمیل یا آی‌پی تانل…" className="field pr-9" />
         </div>
         <div className="flex gap-1.5 overflow-x-auto">
-          {[['all', 'همه'], ['active', 'Active'], ['quota', 'Quota Exceeded'], ['expired', 'Expired'], ['disabled', 'Disabled']].map(([id, label]) => (
+          {[['all', 'همه'], ['active', 'Active'], ['quota', 'Quota Exceeded'], ['expired', 'Expired'], ['disabled', 'Disabled'], ['none', 'No plan']].map(([id, label]) => (
             <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id} className={cx('shrink-0 rounded-lg px-3 py-1.5 text-xs whitespace-nowrap', filter === id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white')}>
-              {label} <Mono className="opacity-60">{id === 'all' ? s.users.length : s.users.filter((u) => u.status === id).length}</Mono>
+              {label} <Mono className="opacity-60">{id === 'all' ? all.length : all.filter((u) => st(u) === id).length}</Mono>
             </button>
           ))}
         </div>
@@ -284,127 +297,132 @@ function UsersTable() {
             </thead>
             <tbody>
               {rows.map((u) => {
-                const used = u.up + u.down;
-                const pct = u.quota ? (used / u.quota) * 100 : 0;
-                const [label, tone] = U_STATUS[u.status];
+                const sub = u.sub;
+                const used = sub ? sub.up + sub.down : 0;
+                const pct = sub?.quota ? (used / sub.quota) * 100 : 0;
+                const [label, tone] = U_STATUS[st(u)];
                 return (
-                  <tr key={u.id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                  <tr key={u.id} className="border-t border-white/5 hover:bg-white/[0.02]" data-user={u.username}>
                     <td data-head="1" className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <span className={cx('size-2 shrink-0 rounded-full', u.online ? 'bg-ok' : 'bg-zinc-600')} title={u.online ? 'آنلاین' : 'آفلاین'} />
+                        <span className={cx('size-2 shrink-0 rounded-full', sub?.online ? 'bg-ok' : 'bg-zinc-600')} title={sub?.online ? 'آنلاین' : 'آفلاین'} />
                         <div className="min-w-0">
-                          <Mono className="block font-bold">{u.username}</Mono>
-                          <span className="text-[11px] text-zinc-500">{s.site.planNames[u.plan]}</span>
+                          <Mono className="block font-bold">{u.username}{u.role !== 'user' && <span className="ms-1.5 text-[11px] text-warn">{u.role}</span>}</Mono>
+                          <span className="text-[11px] text-zinc-500">{sub ? s.site.planNames[sub.kind] : u.email}{u.disabled && ' · حساب غیرفعال'}</span>
                         </div>
                       </div>
                     </td>
-                    <td data-label="آی‌پی تانل" className="px-3 py-2.5"><Mono className="text-xs">{u.ip}/32</Mono></td>
+                    <td data-label="آی‌پی تانل" className="px-3 py-2.5"><Mono className="text-xs">{sub?.ip ? `${sub.ip}/32` : '—'}</Mono></td>
                     <td data-label="مصرف" className="px-3 py-2.5">
-                      {u.plan === 'dns' ? <span className="text-xs text-zinc-500">فقط DNS · بدون صف</span> : (
+                      {!sub ? <span className="text-xs text-zinc-500">—</span> : sub.kind === 'dns' ? <span className="text-xs text-zinc-500">فقط DNS · بدون صف</span> : (
                         <div className="w-56">
                           <div className="mb-1 flex justify-between text-[11px]">
-                            <Mono className="text-silver">↑{gb(u.up)} / ↓{gb(u.down)}</Mono>
-                            <Mono className="font-bold">{gb(used, 1)} / {u.quota ? `${u.quota / GB} GB` : '∞'}</Mono>
+                            <Mono className="text-silver">↑{gb(sub.up)} / ↓{gb(sub.down)}</Mono>
+                            <Mono className="font-bold">{gb(used, 1)} / {sub.quota ? `${gb(sub.quota, 0)} GB` : '∞'}</Mono>
                           </div>
-                          <Progress value={u.quota ? pct : 3} h="h-1.5" />
+                          <Progress value={sub.quota ? pct : 3} h="h-1.5" />
                         </div>
                       )}
                     </td>
-                    <td data-label="انقضا" className="px-3 py-2.5 text-xs whitespace-nowrap">{daysLeft(u.expires) ? `${fa(daysLeft(u.expires))} روز` : <span className="text-warn">تمام شده</span>}</td>
-                    <td data-label="وضعیت" className="px-3 py-2.5"><Badge tone={tone}><Mono>{label}</Mono></Badge></td>
+                    <td data-label="انقضا" className="px-3 py-2.5 text-xs whitespace-nowrap">{!sub ? '—' : daysLeft(sub.expires) ? `${fa(daysLeft(sub.expires))} روز` : <span className="text-warn">تمام شده</span>}</td>
+                    <td data-label="وضعیت" className="px-3 py-2.5"><Badge tone={tone}><Mono>{label}</Mono></Badge>{sub?.provisionError && <span className="ms-1 text-[11px] text-warn" title={sub.provisionError}>⚠</span>}</td>
                     <td data-label="عملیات" className="px-3 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <Btn size="sm" variant="ok" icon={Plus} onClick={() => act.add(u)} title="Add Traffic"><Mono>5GB</Mono></Btn>
-                        <Btn size="sm" variant="ghost" icon={RotateCcw} onClick={() => act.reset(u)} aria-label="Reset Queue Counters" title="Reset Queue Counters" />
-                        <Btn size="sm" variant="ghost" icon={Code2} onClick={() => setRaw(u)} aria-label="Inspect MikroTik Raw Rule" title="Inspect MikroTik Raw Rule" />
-                        <Toggle checked={u.peer} onChange={() => act.toggle(u)} label={`Peer ${u.username}`} />
-                      </div>
+                      {admin && (
+                        <div className="flex items-center gap-1.5">
+                          {sub && <Btn size="sm" variant="ok" icon={Plus} onClick={() => run(u, { action: 'traffic', gb: 5 }, `۵ گیگ به ${u.username} اضافه شد.`)} disabled={sub.quota == null} title="Add Traffic"><Mono>5GB</Mono></Btn>}
+                          {sub && <Btn size="sm" variant="ghost" icon={RotateCcw} onClick={() => run(u, { action: 'reset' }, `شمارنده ${u.username} صفر شد.`)} aria-label="Reset Queue Counters" title="Reset Queue Counters" />}
+                          {sub && <Btn size="sm" variant="ghost" icon={Code2} onClick={() => setRaw(u)} aria-label="Inspect MikroTik Rule" title="Inspect MikroTik Rule" />}
+                          <Btn size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setEdit(u)} aria-label={`مدیریت ${u.username}`} title="کیف پول، روز، نقش" />
+                          {sub && <Toggle checked={sub.status === 'active'} onChange={(v) => run(u, { action: 'peer', on: v }, v ? `Peer ${u.username} فعال شد.` : `Peer ${u.username} غیرفعال شد.`)} label={`Peer ${u.username}`} />}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
               })}
-              {!rows.length && <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-silver">کاربری با این مشخصات پیدا نشد.</td></tr>}
+              {!rows.length && <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-silver">{users.loading ? 'در حال بارگذاری…' : 'کاربری با این مشخصات پیدا نشد.'}</td></tr>}
             </tbody>
           </table>
         </div>
       </Card>
-      {raw && <Raw u={s.users.find((x) => x.id === raw.id)} onClose={() => setRaw(null)} />}
+      {raw && <Raw u={raw} onClose={() => setRaw(null)} />}
+      {edit && <UserManage u={edit} onClose={() => setEdit(null)} run={async (body, ok) => { await run(edit, body, ok); }} />}
     </div>
+  );
+}
+
+function UserManage({ u, onClose, run }) {
+  const [amount, setAmount] = useState(0);
+  const [days, setDays] = useState(30);
+  return (
+    <Modal open onClose={onClose} title={`مدیریت ${u.username}`} icon={SlidersHorizontal}>
+      <div className="space-y-5">
+        <div className="flex items-end gap-2">
+          <Field label={`اصلاح کیف پول (موجودی ${toman(u.wallet)})`} hint="عدد منفی برای کسر." className="flex-1">
+            <input id="um-wallet" dir="ltr" value={amount} onChange={(e) => setAmount(Number(e.target.value.replace(/[^\d-]/g, '')) || 0)} className="field mono" />
+          </Field>
+          <Btn className="mb-6" disabled={!amount} onClick={() => run({ action: 'wallet', amount }, 'کیف پول اصلاح شد.')}>اعمال</Btn>
+        </div>
+        {u.sub && (
+          <div className="flex items-end gap-2">
+            <Field label="افزودن روز به اشتراک" className="flex-1">
+              <input id="um-days" dir="ltr" inputMode="numeric" value={days} onChange={(e) => setDays(Number(e.target.value.replace(/\D/g, '')) || 0)} className="field mono" />
+            </Field>
+            <Btn disabled={!days} onClick={() => run({ action: 'days', days }, `${fa(days)} روز اضافه شد.`)}>افزودن</Btn>
+          </div>
+        )}
+        <Field label="نقش">
+          <select id="um-role" value={u.role} onChange={(e) => run({ action: 'role', role: e.target.value }, 'نقش عوض شد.')} className="field">
+            <option value="user">کاربر</option><option value="support">پشتیبان</option><option value="admin">مدیر</option>
+          </select>
+        </Field>
+        <div className="flex items-center justify-between well px-4 py-3">
+          <span className="text-sm font-bold">حساب فعال</span>
+          <Toggle checked={!u.disabled} onChange={(v) => run({ action: 'account', disabled: !v }, v ? 'حساب فعال شد.' : 'حساب غیرفعال شد و نشست‌هاش بسته شد.')} label="حساب فعال" />
+        </div>
+      </div>
+    </Modal>
   );
 }
 
 /* ───────────────────────── Game servers & RCON ───────────────────────── */
 
 function Rcon({ id, onClose }) {
-  const { s, patch, log } = useStore();
-  const v = s.servers.find((x) => x.id === id);
-  const [out, setOut] = useState([{ t: 'sys', text: `rcon connected → ${v.host}:${v.port}` }, { t: 'sys', text: 'type "help" for commands' }]);
+  const { o } = useAdmin();
+  const { api } = useStore();
+  const v = o.servers.find((x) => x.id === id);
+  const [out, setOut] = useState([{ t: 'sys', text: `rcon → ${v.host}:${v.port}` }, { t: 'sys', text: 'allow-list: status · mp_restartgame · mp_warmup_end · changelevel · kick · say · users' }]);
   const [cmd, setCmd] = useState('');
   const [hist, setHist] = useState([]);
   const [hi, setHi] = useState(-1);
+  const [busy, setBusy] = useState(false);
   const end = useRef(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [out]);
   const maps = v.game === 'CS2' ? CS2_MAPS : [v.map];
 
-  const exec = (raw) => {
+  const exec = async (raw) => {
     const line = raw.trim();
-    if (!line) return;
-    const [name, ...args] = line.split(/\s+/);
-    const arg = args.join(' ').replace(/^"|"$/g, '');
-    let res = [];
-    let level = 'info';
-    switch (name.toLowerCase()) {
-      case 'help':
-        res = ['status · mp_restartgame <1-9> · mp_warmup_end · changelevel <map> · kick <name> · say <text> · clear'];
-        break;
-      case 'status':
-        res = [`hostname: ${v.name}`, `map     : ${v.map}`, `players : ${v.players} humans, 0 bots (${v.max} max)`, '# userid name                 ping  K/D',
-          ...v.list.map((p, i) => `# ${String(i + 2).padStart(6)} ${`"${p.name}"`.padEnd(20)} ${String(p.ping).padStart(4)}  ${p.k}/${p.d}`)];
-        break;
-      case 'mp_restartgame':
-        if (!/^[1-9]$/.test(arg)) { res = ['usage: mp_restartgame <1-9>']; break; }
-        patch('servers', id, (x) => ({ list: x.list.map((p) => ({ ...p, k: 0, d: 0 })) }));
-        res = [`Game will restart in ${arg} second${arg === '1' ? '' : 's'}`];
-        break;
-      case 'mp_warmup_end':
-        res = ['Warmup ended. Match is LIVE.'];
-        break;
-      case 'changelevel':
-        if (!/^[a-z0-9_]{3,32}$/.test(arg)) { res = ['usage: changelevel <map>']; break; }
-        if (v.game === 'CS2' && !CS2_MAPS.includes(arg) && !arg.startsWith('aim_')) { res = [`changelevel failed: map "${arg}" not found on server`]; level = 'warn'; break; }
-        patch('servers', id, () => ({ map: arg }));
-        res = [`Changing level to ${arg}…`, 'Host_NewGame on ' + arg];
-        break;
-      case 'kick': {
-        const p = v.list.find((x) => x.name.toLowerCase() === arg.toLowerCase());
-        if (!p) { res = [`kick: no player named "${arg}"`]; level = 'warn'; break; }
-        patch('servers', id, (x) => ({ list: x.list.filter((y) => y !== p && y.name !== p.name), players: Math.max(0, x.players - 1) }));
-        res = [`Kicked ${p.name} (Kicked by Console)`];
-        level = 'warn';
-        break;
-      }
-      case 'say':
-        res = arg ? [`Console: ${arg}`] : ['usage: say <text>'];
-        break;
-      case 'clear':
-        setOut([]);
-        setCmd('');
-        return;
-      default:
-        res = [`Unknown command "${name}" (فقط دستورهای allow-list از پنل قابل اجراست)`];
-        level = 'warn';
-    }
-    setOut((o) => [...o, { t: 'in', text: line }, ...res.map((text) => ({ t: 'out', text }))]);
+    if (!line || busy) return;
+    if (line === 'clear') { setOut([]); setCmd(''); return; }
+    setOut((x) => [...x, { t: 'in', text: line }]);
     setHist((h) => [line, ...h].slice(0, 30));
     setHi(-1);
     setCmd('');
-    log('rcon', level, `${line} · ${v.name}`);
+    setBusy(true);
+    try {
+      const r = await api(`/api/admin/servers/${id}/rcon`, { method: 'POST', body: { command: line } });
+      setOut((x) => [...x, ...r.output.split('\n').map((text) => ({ t: 'out', text }))]);
+    } catch (e) {
+      setOut((x) => [...x, { t: 'err', text: e.message }]);
+    }
+    setBusy(false);
   };
 
   return (
     <Drawer open onClose={onClose} title={`RCON · ${v.name}`}>
+      {!v.hasRcon && <p className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3 text-xs leading-6 text-amber-200">رمز RCON این سرور ثبت نشده. از «ویرایش» سرور واردش کن.</p>}
       <div className="grid grid-cols-3 gap-2 text-center">
-        {[['Map', v.map], ['Players', `${v.players}/${v.max}`], ['Ping', `${v.ping}ms`]].map(([k, val]) => (
+        {[['Map', v.map], ['Players', `${v.players}/${v.max}`], ['Ping', v.status === 'online' ? `${v.ping}ms` : '—']].map(([k, val]) => (
           <div key={k} className="well py-2.5"><Mono className="block truncate px-1 text-sm font-black">{val}</Mono><Mono className="text-[11px] text-silver">{k}</Mono></div>
         ))}
       </div>
@@ -421,8 +439,9 @@ function Rcon({ id, onClose }) {
 
       <div dir="ltr" className="mono mt-4 h-64 overflow-y-auto well p-3 text-left text-xs leading-6" aria-live="polite">
         {out.map((l, i) => (
-          <div key={i} className={cx('whitespace-pre-wrap', l.t === 'in' && 'text-brand2', l.t === 'sys' && 'text-zinc-500', l.t === 'out' && 'text-zinc-200')}>{l.t === 'in' ? `] ${l.text}` : l.text}</div>
+          <div key={i} className={cx('whitespace-pre-wrap', l.t === 'in' && 'text-brand2', l.t === 'sys' && 'text-zinc-500', l.t === 'out' && 'text-zinc-200', l.t === 'err' && 'text-warn')} dir={l.t === 'err' ? 'auto' : undefined}>{l.t === 'in' ? `] ${l.text}` : l.text}</div>
         ))}
+        {busy && <span className="inline-block h-3 w-1.5 animate-pulse bg-brand2 align-middle" />}
         <div ref={end} />
       </div>
       <form dir="ltr" className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); exec(cmd); }}>
@@ -433,54 +452,55 @@ function Rcon({ id, onClose }) {
             if (e.key === 'ArrowDown') { e.preventDefault(); const n = hi - 1; setHi(Math.max(-1, n)); setCmd(n >= 0 ? hist[n] : ''); }
           }}
         />
-        <Btn type="submit" icon={Send}>Run</Btn>
+        <Btn type="submit" icon={Send} busy={busy}>Run</Btn>
       </form>
 
-      <h4 className="mt-6 mb-2 flex items-center gap-2 text-sm font-black"><Users className="size-4 text-brand2" /> بازیکن‌های آنلاین <Mono className="text-silver">({v.list.length})</Mono></h4>
+      <h4 className="mt-6 mb-2 flex items-center gap-2 text-sm font-black"><Users className="size-4 text-brand2" /> بازیکن‌های آنلاین (A2S) <Mono className="text-silver">({v.list.length})</Mono></h4>
       <ul className="space-y-1.5">
-        {v.list.map((p) => (
-          <li key={p.name} className="flex items-center gap-3 well px-3 py-1.5">
+        {v.list.map((p, i) => (
+          <li key={`${p.name}-${i}`} className="flex items-center gap-3 well px-3 py-1.5">
             <Mono className="min-w-0 flex-1 truncate text-sm font-bold">{p.name}</Mono>
-            <Mono className="text-xs text-silver">{p.k}/{p.d}</Mono>
-            <Mono className={cx('w-12 text-end text-xs', p.ping < 30 ? 'text-ok' : 'text-warn')}>{p.ping}ms</Mono>
-            <Btn size="sm" variant="danger" icon={UserX} onClick={() => exec(`kick "${p.name}"`)}>Kick</Btn>
+            <Mono className="text-xs text-silver">{p.k}</Mono>
+            <Mono className="w-12 text-end text-xs text-silver">{Math.floor((p.time ?? 0) / 60)}m</Mono>
+            <Btn size="sm" variant="danger" icon={UserX} onClick={() => exec(`kick "${p.name.replace(/"/g, '')}"`)}>Kick</Btn>
           </li>
         ))}
-        {!v.list.length && <li className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-silver">سرور خالیه.</li>}
+        {!v.list.length && <li className="rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-silver">{v.status === 'online' ? 'سرور خالیه.' : 'سرور به A2S جواب نمی‌ده.'}</li>}
       </ul>
     </Drawer>
   );
 }
 
-const emptyServer = { name: '', game: 'CS2', mode: 'retake', map: 'de_mirage', max: 10, host: '', port: 27015, vip: false };
+const emptyServer = { name: '', mode: 'retake', map: 'de_mirage', max: 10, host: '', port: 27015, vip: false, enabled: true, rcon: '', sort: 0 };
+const serverBody = (f, extra = {}) => ({ name: f.name.trim(), mode: f.mode, map: f.map, host: f.host.trim(), port: +f.port, max: +f.max, vip: !!f.vip, enabled: f.enabled !== false, rcon: f.rcon ?? '', sort: +(f.sort ?? 0), ...extra });
 
 function ServerForm({ initial, onClose }) {
-  const { set, toast, log } = useStore();
+  const { reload } = useAdmin();
+  const act = useAct();
   const editing = !!initial.id;
-  const [f, setF] = useState({ ...emptyServer, ...initial });
+  const [f, setF] = useState({ ...emptyServer, ...initial, rcon: '' });
   const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
   const up = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const errs = {
     name: f.name.trim().length >= 4 ? '' : 'حداقل ۴ کاراکتر.',
-    host: /^([a-z0-9-]+\.)+[a-z]{2,}$|^(\d{1,3}\.){3}\d{1,3}$/i.test(f.host) ? '' : 'هاست یا آی‌پی معتبر وارد کن.',
+    host: /^([a-z0-9-]+\.)+[a-z]{2,}$|^(\d{1,3}\.){3}\d{1,3}$/i.test(f.host.trim()) ? '' : 'هاست یا آی‌پی معتبر وارد کن.',
     port: +f.port >= 1024 && +f.port <= 65535 ? '' : 'پورت بین 1024 تا 65535.',
     max: +f.max >= 2 && +f.max <= 200 ? '' : 'بین ۲ تا ۲۰۰.',
     map: /^[A-Za-z0-9_ ]{3,32}$/.test(f.map) ? '' : 'نام مپ نامعتبره.',
   };
   const e = (k) => (touched ? errs[k] : '');
-  const save = () => {
+  const save = async () => {
     setTouched(true);
     if (Object.values(errs).some(Boolean)) return;
-    const game = f.mode === 'rust' ? 'Rust' : f.mode === 'mc' ? 'Minecraft' : 'CS2';
-    const row = { ...f, game, port: +f.port, max: +f.max, name: f.name.trim() };
-    if (editing) set((p) => ({ servers: p.servers.map((x) => (x.id === row.id ? { ...x, ...row, players: Math.min(x.players, row.max), list: x.list.slice(0, row.max) } : x)) }));
-    else set((p) => ({ servers: [...p.servers, { ...row, id: `s${uid()}`, players: 0, list: [], ping: 12, tick: game === 'CS2' ? 'Sub-tick 64' : game === 'Rust' ? '30 FPS Server' : '20 TPS', ac: game === 'CS2' ? 'Doping AC + VAC' : game === 'Rust' ? 'EAC' : 'Grim AC', status: 'online' }] }));
-    log('admin', 'info', `gameserver.${editing ? 'update' : 'create'} ${row.name}`);
-    toast(editing ? 'سرور به‌روزرسانی شد.' : 'سرور اضافه شد و توی صفحه اصلی دیده می‌شه.');
-    onClose();
+    setBusy(true);
+    const r = await act(editing ? `/api/admin/servers/${f.id}` : '/api/admin/servers', editing ? 'PATCH' : 'POST', serverBody(f),
+      editing ? 'سرور به‌روزرسانی شد.' : 'سرور اضافه شد؛ تا ۳۰ ثانیه دیگه وضعیت زنده‌ش (A2S) خونده می‌شه.');
+    setBusy(false);
+    if (r) { await reload(); onClose(); }
   };
   return (
-    <Modal open onClose={onClose} wide title={editing ? 'ویرایش سرور بازی' : 'افزودن سرور بازی'} footer={<><Btn variant="ghost" onClick={onClose}>انصراف</Btn><Btn onClick={save}>{editing ? 'ذخیره' : 'افزودن سرور'}</Btn></>}>
+    <Modal open onClose={onClose} wide title={editing ? 'ویرایش سرور بازی' : 'افزودن سرور بازی'} footer={<><Btn variant="ghost" onClick={onClose}>انصراف</Btn><Btn onClick={save} busy={busy}>{editing ? 'ذخیره' : 'افزودن سرور'}</Btn></>}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="نام سرور" error={e('name')} className="sm:col-span-2"><input id="gs-name" dir="ltr" value={f.name} onChange={up('name')} placeholder="Doping Retake #3" className="field mono" /></Field>
         <Field label="نوع">
@@ -488,22 +508,27 @@ function ServerForm({ initial, onClose }) {
         </Field>
         <Field label="مپ پیش‌فرض" error={e('map')}><input id="gs-map" dir="ltr" value={f.map} onChange={up('map')} className="field mono" /></Field>
         <Field label="هاست / آی‌پی" error={e('host')}><input id="gs-host" dir="ltr" value={f.host} onChange={up('host')} placeholder="retake3.doping.games" className="field mono" /></Field>
-        <Field label="پورت" error={e('port')}><input id="gs-port" dir="ltr" inputMode="numeric" value={f.port} onChange={up('port')} className="field mono" /></Field>
+        <Field label="پورت (بازی، A2S و RCON)" error={e('port')}><input id="gs-port" dir="ltr" inputMode="numeric" value={f.port} onChange={up('port')} className="field mono" /></Field>
         <Field label="ظرفیت" error={e('max')}><input id="gs-max" dir="ltr" inputMode="numeric" value={f.max} onChange={up('max')} className="field mono" /></Field>
-        <div className="flex items-center justify-between well px-4"><span className="text-sm font-bold">فقط VIP</span><Toggle checked={f.vip} onChange={(v) => setF({ ...f, vip: v })} label="فقط VIP" /></div>
+        <Field label="رمز RCON" hint={editing ? (initial.hasRcon ? 'ثبت شده؛ خالی بذار تا بمونه.' : 'هنوز ثبت نشده.') : 'رمزگذاری‌شده ذخیره می‌شه.'}>
+          <input id="gs-rcon" dir="ltr" type="password" autoComplete="new-password" value={f.rcon} onChange={up('rcon')} className="field mono" />
+        </Field>
+        <div className="flex items-center justify-between well px-4 py-3"><span className="text-sm font-bold">فقط VIP</span><Toggle checked={f.vip} onChange={(v) => setF({ ...f, vip: v })} label="فقط VIP" /></div>
+        <div className="flex items-center justify-between well px-4 py-3"><span className="text-sm font-bold">نمایش در سایت</span><Toggle checked={f.enabled} onChange={(v) => setF({ ...f, enabled: v })} label="نمایش در سایت" /></div>
       </div>
     </Modal>
   );
 }
 
 function GameServers() {
-  const { s, set, patch, toast, log } = useStore();
+  const { o, reload } = useAdmin();
+  const act = useAct();
   const [form, setForm] = useState(null);
   const [rcon, setRcon] = useState(null);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-silver">تغییرها همون لحظه توی «سرورهای بازی» صفحه اصلی دیده می‌شن.</p>
+        <p className="text-sm text-silver">وضعیت، مپ و بازیکن‌ها هر ۳۰ ثانیه با کوئری A2S از خود سرورها خونده می‌شه و توی صفحه اصلی نمایش داده می‌شه.</p>
         <Btn icon={Plus} onClick={() => setForm({})}>افزودن سرور</Btn>
       </div>
       <Card className="overflow-hidden">
@@ -513,33 +538,34 @@ function GameServers() {
               <tr>{['سرور', 'آدرس', 'مپ', 'بازیکن', 'پینگ', 'وضعیت', 'عملیات'].map((h) => <th key={h} className="px-3 py-3 text-start font-bold">{h}</th>)}</tr>
             </thead>
             <tbody>
-              {s.servers.map((v) => (
-                <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.02]">
+              {o.servers.map((v) => (
+                <tr key={v.id} className={cx('border-t border-white/5 hover:bg-white/[0.02]', !v.enabled && 'opacity-60')}>
                   <td data-head="1" className="px-3 py-2.5"><div className="flex items-center gap-3"><ModeEmblem mode={v.mode} vip={v.vip} className="size-9 shrink-0" /><div className="min-w-0"><Mono className="block font-bold">{v.name}</Mono><Mono className="text-[11px] text-zinc-500">{v.game} · {v.tick}</Mono></div></div></td>
                   <td data-label="آدرس" className="px-3 py-2.5"><Mono className="text-xs">{v.host}:{v.port}</Mono></td>
                   <td data-label="مپ" className="px-3 py-2.5"><Mono className="text-xs font-bold">{v.map}</Mono></td>
                   <td data-label="بازیکن" className="px-3 py-2.5"><div className="w-28"><Mono className="text-xs">{v.players}/{v.max}</Mono><Progress value={(v.players / v.max) * 100} h="h-1.5" className="mt-1" /></div></td>
                   <td data-label="پینگ" className="px-3 py-2.5"><Mono className="text-xs text-ok">{v.status === 'online' ? `${v.ping}ms` : '—'}</Mono></td>
-                  <td data-label="وضعیت" className="px-3 py-2.5"><Badge tone={v.status === 'online' ? 'ok' : 'bad'}>{v.status === 'online' ? 'Online' : 'Stopped'}</Badge></td>
+                  <td data-label="وضعیت" className="px-3 py-2.5"><Badge tone={!v.enabled ? 'mute' : v.status === 'online' ? 'ok' : v.status === 'offline' ? 'bad' : 'warn'}>{!v.enabled ? 'Hidden' : v.status === 'online' ? 'Online' : v.status === 'offline' ? 'No reply' : 'Pending'}</Badge></td>
                   <td data-label="عملیات" className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
-                      <Btn size="sm" icon={Terminal} disabled={v.status !== 'online'} onClick={() => setRcon(v.id)}>RCON</Btn>
+                      <Btn size="sm" icon={Terminal} onClick={() => setRcon(v.id)}>RCON</Btn>
                       <Btn size="sm" variant="ghost" icon={Pencil} aria-label="ویرایش" onClick={() => setForm(v)} />
                       <Btn
-                        size="sm" variant="ghost" icon={v.status === 'online' ? Ban : Play} aria-label={v.status === 'online' ? 'توقف' : 'استارت'} title={v.status === 'online' ? 'توقف سرور' : 'استارت سرور'}
-                        onClick={() => { const on = v.status === 'online'; patch('servers', v.id, () => (on ? { status: 'offline', players: 0, list: [] } : { status: 'online', players: 2, list: roster(2) })); log('admin', 'warn', `gameserver.${on ? 'stop' : 'start'} ${v.name}`); }}
+                        size="sm" variant="ghost" icon={v.enabled ? Ban : Play} aria-label={v.enabled ? 'پنهان کردن از سایت' : 'نمایش در سایت'} title={v.enabled ? 'پنهان کردن از سایت و توقف کوئری' : 'نمایش در سایت'}
+                        onClick={async () => { if (await act(`/api/admin/servers/${v.id}`, 'PATCH', serverBody(v, { enabled: !v.enabled, rcon: '' }), v.enabled ? 'سرور از سایت پنهان شد.' : 'سرور توی سایت نمایش داده می‌شه.')) reload(); }}
                       />
-                      <Btn size="sm" variant="danger" icon={Trash2} aria-label="حذف" onClick={() => { set((p) => ({ servers: p.servers.filter((x) => x.id !== v.id) })); log('admin', 'warn', `gameserver.delete ${v.name}`); toast('سرور حذف شد.', 'warn'); }} />
+                      <Btn size="sm" variant="danger" icon={Trash2} aria-label="حذف" onClick={async () => { if (await act(`/api/admin/servers/${v.id}`, 'DELETE', undefined, 'سرور حذف شد.')) reload(); }} />
                     </div>
                   </td>
                 </tr>
               ))}
+              {!o.servers.length && <tr><td colSpan={7} className="px-3 py-10 text-center text-sm text-silver">هنوز سروری اضافه نشده.</td></tr>}
             </tbody>
           </table>
         </div>
       </Card>
       {form && <ServerForm initial={form} onClose={() => setForm(null)} />}
-      {rcon && s.servers.some((x) => x.id === rcon) && <Rcon id={rcon} onClose={() => setRcon(null)} />}
+      {rcon && o.servers.some((x) => x.id === rcon) && <Rcon id={rcon} onClose={() => setRcon(null)} />}
     </div>
   );
 }
@@ -556,22 +582,24 @@ function NumInput({ id, value, onChange, suffix }) {
 }
 
 function Sales({ open }) {
-  const { s, set, toast, log } = useStore();
+  const { s } = useStore();
+  const act = useAct();
+  const sales = useResource('/api/admin/sales');
   const P = s.site.pricing;
   const [code, setCode] = useState({ code: '', percent: 10, max: 100 });
   const [err, setErr] = useState('');
-  const paid = s.invoices.filter((i) => i.status === 'paid');
-  const addCode = () => {
+  const d = sales.data;
+  const addCode = async () => {
     const c = code.code.trim().toUpperCase();
     if (!/^[A-Z0-9]{4,16}$/.test(c)) return setErr('کد باید ۴ تا ۱۶ حرف لاتین یا عدد باشه.');
     if (code.percent < 1 || code.percent > 90) return setErr('درصد بین ۱ تا ۹۰.');
-    if (s.discounts.some((d) => d.code === c)) return setErr('این کد قبلاً ساخته شده.');
     setErr('');
-    set((p) => ({ discounts: [{ id: uid(), code: c, percent: code.percent, used: 0, max: code.max || 100, active: true }, ...p.discounts] }));
-    log('admin', 'info', `discount.create ${c} ${code.percent}%`);
-    setCode({ code: '', percent: 10, max: 100 });
-    toast('کد تخفیف ساخته شد.');
+    if (await act('/api/admin/discounts', 'POST', { code: c, percent: code.percent, max: code.max || 100 }, 'کد تخفیف ساخته شد.')) {
+      setCode({ code: '', percent: 10, max: 100 });
+      sales.reload();
+    }
   };
+  const O_STATUS = { paid: ['پرداخت شده', 'ok'], pending: ['در انتظار', 'warn'], failed: ['ناموفق', 'bad'], canceled: ['لغو', 'mute'] };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card className="p-5 lg:col-span-2">
@@ -611,46 +639,133 @@ function Sales({ open }) {
         </div>
         {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
         <ul className="mt-4 space-y-2">
-          {s.discounts.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 well px-3 py-2">
+          {(d?.discounts ?? []).map((x) => (
+            <li key={x.id} className="flex items-center gap-3 well px-3 py-2">
               <div className="min-w-0 flex-1">
-                <Mono className="block font-bold">{d.code}</Mono>
-                <Mono className="text-[11px] text-silver">{d.percent}% · {d.used}/{d.max} used</Mono>
+                <Mono className="block font-bold">{x.code}</Mono>
+                <Mono className="text-[11px] text-silver">{x.percent}% · {x.used}/{x.max} used</Mono>
               </div>
-              {d.used >= d.max && <Badge tone="warn">ظرفیت پر</Badge>}
-              <Toggle checked={d.active} label={`فعال بودن ${d.code}`} onChange={(v) => set((p) => ({ discounts: p.discounts.map((x) => (x.id === d.id ? { ...x, active: v } : x)) }))} />
-              <Btn size="sm" variant="danger" icon={Trash2} aria-label={`حذف ${d.code}`} onClick={() => set((p) => ({ discounts: p.discounts.filter((x) => x.id !== d.id) }))} />
+              {x.used >= x.max && <Badge tone="warn">ظرفیت پر</Badge>}
+              <Toggle checked={x.active} label={`فعال بودن ${x.code}`} onChange={async (v) => { if (await act(`/api/admin/discounts/${x.id}`, 'PATCH', { active: v })) sales.reload(); }} />
+              <Btn size="sm" variant="danger" icon={Trash2} aria-label={`حذف ${x.code}`} onClick={async () => { if (await act(`/api/admin/discounts/${x.id}`, 'DELETE', undefined, 'کد حذف شد.')) sales.reload(); }} />
             </li>
           ))}
+          {d && !d.discounts.length && <li className="rounded-xl border border-dashed border-white/15 p-4 text-center text-xs text-silver">هنوز کد تخفیفی نساختی.</li>}
         </ul>
       </Card>
 
       <Card className="p-5">
         <h3 className="flex items-center gap-2.5 text-[15px] font-black"><CreditCard className="size-4 text-brand2" /> درگاه‌های پرداخت</h3>
         <ul className="mt-4 space-y-2">
-          {s.gateways.map((g) => (
+          {(d?.gateways ?? []).map((g) => (
             <li key={g.id} className="flex items-center gap-3 well px-3 py-3">
               <div className="min-w-0 flex-1">
                 <div className="font-bold">{g.name}</div>
-                <div className="text-[11px] text-silver">{g.kind} · <Mono>{g.key}</Mono></div>
+                <div className="text-[11px] text-silver">{g.kind}{g.mode && <> · حالت <Mono>{g.mode}</Mono>{g.mode === 'test' && ' (ZARINPAL_MERCHANT_ID تنظیم نشده)'}</>}</div>
               </div>
               <Badge tone={g.enabled ? 'ok' : 'mute'}>{g.enabled ? 'فعال' : 'خاموش'}</Badge>
-              <Toggle
-                checked={g.enabled} label={`فعال بودن ${g.name}`}
-                onChange={(v) => {
-                  if (!v && s.gateways.filter((x) => x.enabled).length === 1) return toast('حداقل یک درگاه باید فعال بمونه.', 'warn');
-                  set((p) => ({ gateways: p.gateways.map((x) => (x.id === g.id ? { ...x, enabled: v } : x)) }));
-                  log('admin', 'warn', `gateway.${v ? 'enable' : 'disable'} ${g.id}`);
-                }}
-              />
+              <Toggle checked={g.enabled} label={`فعال بودن ${g.name}`} onChange={async (v) => { if (await act(`/api/admin/gateways/${g.id}`, 'PATCH', { enabled: v })) sales.reload(); }} />
             </li>
           ))}
         </ul>
-        <div className="mt-4 well p-4">
-          <div className="text-xs text-silver">فروش ثبت‌شده در این نشست (حساب نمونه)</div>
-          <div className="mt-1 text-2xl font-black">{toman(paid.reduce((a, i) => a + i.amount, 0))}</div>
-          <div className="text-[11px] text-zinc-500">{fa(paid.length)} تراکنش موفق · {fa(s.invoices.length - paid.length)} ناموفق</div>
+        {d && (
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="well p-4">
+              <div className="text-xs text-silver">فروش ۳۰ روز اخیر</div>
+              <div className="mt-1 text-xl font-black">{toman(d.totals.month)}</div>
+            </div>
+            <div className="well p-4">
+              <div className="text-xs text-silver">کل فروش · شارژ کیف پول</div>
+              <div className="mt-1 text-sm font-black">{toman(d.totals.paid)}</div>
+              <div className="text-[11px] text-zinc-500">{toman(d.totals.topups)} شارژ · {fa(d.totals.ok)} موفق · {fa(d.totals.bad)} ناموفق</div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="min-w-0 p-5 lg:col-span-2">
+        <h3 className="text-[15px] font-black">آخرین سفارش‌ها</h3>
+        <div className="max-md:p-2 mt-3 overflow-x-auto">
+          <table className="rtable w-full md:min-w-[760px] text-sm">
+            <thead className="text-[11px] text-zinc-500"><tr>{['فاکتور', 'شرح', 'کاربر', 'مبلغ', 'درگاه', 'وضعیت'].map((h) => <th key={h} className="px-2 py-2 text-start font-bold">{h}</th>)}</tr></thead>
+            <tbody>
+              {(d?.orders ?? []).map((x) => (
+                <tr key={x.id} className="border-t border-white/5">
+                  <td data-label="فاکتور" className="px-2 py-2"><Mono className="text-xs">{x.number}</Mono></td>
+                  <td data-head="1" className="px-2 py-2"><div className="font-bold">{x.title}</div><div className="text-[11px] text-zinc-500">{faDate(x.at)} {clock(x.at)}{x.refId && <> · ref <Mono>{x.refId}</Mono></>}</div></td>
+                  <td data-label="کاربر" className="px-2 py-2"><Mono className="text-xs">{x.username}</Mono></td>
+                  <td data-label="مبلغ" className="px-2 py-2 whitespace-nowrap">{toman(x.amount)}</td>
+                  <td data-label="درگاه" className="px-2 py-2 text-xs text-silver">{x.gateway === 'wallet' ? 'کیف پول' : 'زرین‌پال'}</td>
+                  <td data-label="وضعیت" className="px-2 py-2"><Badge tone={O_STATUS[x.status][1]}>{O_STATUS[x.status][0]}</Badge></td>
+                </tr>
+              ))}
+              {d && !d.orders.length && <tr><td colSpan={6} className="px-2 py-8 text-center text-sm text-silver">هنوز سفارشی ثبت نشده.</td></tr>}
+            </tbody>
+          </table>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ───────────────────────── Support tickets ───────────────────────── */
+
+const T_STATUS = { open: ['در انتظار پاسخ', 'warn'], answered: ['پاسخ داده شد', 'ok'], closed: ['بسته', 'mute'] };
+
+function Tickets() {
+  const act = useAct();
+  const tickets = useResource('/api/admin/tickets', { interval: 30_000 });
+  const [sel, setSel] = useState(null);
+  const [reply, setReply] = useState('');
+  const [filter, setFilter] = useState('open');
+  const all = tickets.data ?? [];
+  const list = all.filter((t) => filter === 'all' || t.status === filter);
+  const t = all.find((x) => x.id === sel) ?? list[0];
+  const send = async (body, ok) => { if (await act(`/api/admin/tickets/${t.id}`, 'POST', body, ok)) { setReply(''); tickets.reload(); } };
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+      <Card className="p-5">
+        <div className="flex gap-1.5 overflow-x-auto">
+          {[['open', 'باز'], ['answered', 'پاسخ‌داده'], ['closed', 'بسته'], ['all', 'همه']].map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setFilter(id)} aria-pressed={filter === id} className={cx('shrink-0 rounded-lg px-3 py-1.5 text-xs', filter === id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white')}>
+              {label} <Mono className="opacity-60">{id === 'all' ? all.length : all.filter((x) => x.status === id).length}</Mono>
+            </button>
+          ))}
+        </div>
+        <ul className="mt-3 space-y-2">
+          {list.map((x) => (
+            <li key={x.id}>
+              <button type="button" onClick={() => setSel(x.id)} className={cx('relative w-full rounded-2xl p-3 text-start transition', t?.id === x.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
+                <div className="flex items-center justify-between gap-2"><Mono className="text-[11px] text-silver">{x.code} · {x.username}</Mono><Badge tone={T_STATUS[x.status][1]}>{T_STATUS[x.status][0]}</Badge></div>
+                <div className="mt-1 truncate text-sm font-bold">{x.subject}</div>
+                <div className="text-[11px] text-zinc-500">واحد {x.dept} · {faDate(x.updated)}</div>
+              </button>
+            </li>
+          ))}
+          {!list.length && <li className="rounded-2xl border border-dashed border-white/15 p-5 text-center text-xs text-silver">{tickets.loading ? 'در حال بارگذاری…' : 'تیکتی نیست.'}</li>}
+        </ul>
+      </Card>
+      <Card className="flex min-h-[360px] min-w-0 flex-col p-5">
+        {t ? (
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/[0.07] pb-4">
+              <div><div className="font-black">{t.subject}</div><div className="text-xs text-silver"><Mono>{t.code}</Mono> · <Mono>{t.username}</Mono> · واحد {t.dept}</div></div>
+              {t.status !== 'closed' && <Btn size="sm" variant="ghost" onClick={() => send({ status: 'closed' }, 'تیکت بسته شد.')}>بستن تیکت</Btn>}
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto py-4">
+              {t.msgs.map((m) => (
+                <div key={m.id} className={cx('max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-7', m.from === 'staff' ? 'bg-brand/20' : 'ms-auto border border-white/8 bg-white/[0.04]')}>
+                  <div className="mb-0.5 text-[11px] font-bold text-silver">{m.from === 'staff' ? 'پشتیبانی' : t.username} · {clock(m.at)}</div>
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                </div>
+              ))}
+            </div>
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (reply.trim()) send({ text: reply.trim() }, 'پاسخ ارسال شد.'); }}>
+              <input id="adm-reply" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="پاسخ پشتیبانی…" className="field" />
+              <Btn type="submit" icon={Send} disabled={!reply.trim()}>ارسال</Btn>
+            </form>
+          </>
+        ) : <div className="m-auto text-center text-sm text-silver">تیکتی انتخاب نشده.</div>}
       </Card>
     </div>
   );
@@ -658,20 +773,19 @@ function Sales({ open }) {
 
 /* ───────────────────────── Security audit log ───────────────────────── */
 
-const L_TYPES = [['all', 'همه'], ['auth', 'Auth'], ['mikrotik', 'MikroTik API'], ['payment', 'Payment'], ['dns', 'DNS / IP'], ['rcon', 'RCON'], ['admin', 'Admin']];
+const L_TYPES = [['all', 'همه'], ['auth', 'Auth'], ['mikrotik', 'MikroTik API'], ['payment', 'Payment'], ['dns', 'DNS / IP'], ['rcon', 'RCON'], ['admin', 'Admin'], ['system', 'System']];
 const L_TONE = { info: 'mute', warn: 'warn', critical: 'bad' };
 
 function Logs() {
-  const { s } = useStore();
   const [type, setType] = useState('all');
   const [level, setLevel] = useState('all');
   const [q, setQ] = useState('');
-  const [frozen, setFrozen] = useState(null);
-  const src = frozen ?? s.logs;
-  const rows = src
-    .filter((l) => type === 'all' || l.type === type)
-    .filter((l) => level === 'all' || l.level === level)
-    .filter((l) => `${l.msg} ${l.actor} ${l.ip}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const [query, setQuery] = useState('');
+  const [frozen, setFrozen] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setQuery(q.trim()), 300); return () => clearTimeout(t); }, [q]);
+  const url = `/api/admin/logs?type=${type}&level=${level}&q=${encodeURIComponent(query)}`;
+  const logs = useResource(url, { interval: frozen ? 0 : 5_000 });
+  const rows = logs.data ?? [];
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -684,7 +798,7 @@ function Logs() {
           <option value="all">همه سطح‌ها</option><option value="info">info</option><option value="warn">warn</option><option value="critical">critical</option>
         </select>
         <input id="log-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو در لاگ…" className="field w-full sm:w-52" />
-        <Btn variant={frozen ? 'primary' : 'ghost'} icon={frozen ? Play : Pause} onClick={() => setFrozen(frozen ? null : s.logs)}>{frozen ? 'ادامه پخش زنده' : 'توقف'}</Btn>
+        <Btn variant={frozen ? 'primary' : 'ghost'} icon={frozen ? Play : Pause} onClick={() => setFrozen(!frozen)}>{frozen ? 'ادامه پخش زنده' : 'توقف'}</Btn>
       </div>
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-white/8 px-4 py-2.5 text-xs text-silver">
@@ -704,7 +818,7 @@ function Logs() {
                   <td data-label="آی‌پی" className="px-3 py-2 whitespace-nowrap"><Mono className="text-zinc-500">{l.ip}</Mono></td>
                 </tr>
               ))}
-              {!rows.length && <tr><td className="px-3 py-10 text-center text-sm text-silver">رویدادی با این فیلتر ثبت نشده.</td></tr>}
+              {!rows.length && <tr><td className="px-3 py-10 text-center text-sm text-silver">{logs.loading ? 'در حال بارگذاری…' : 'رویدادی با این فیلتر ثبت نشده.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -715,39 +829,53 @@ function Logs() {
 
 /* ───────────────────────── Shell ───────────────────────── */
 
-export default function Admin() {
-  const { s } = useStore();
-  const [tab, setTab] = useState('routers');
+export default function Admin({ initial, role }) {
+  const { api } = useStore();
+  const [o, setO] = useState(initial);
+  const [tab, setTab] = useState(role === 'admin' ? 'routers' : 'users');
   const [sub, setSub] = useState(null);
+  const reload = useCallback(async () => {
+    try { setO(await api('/api/admin/overview')); } catch { /* keep last */ }
+  }, [api]);
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 15_000);
+    return () => clearInterval(t);
+  }, [reload]);
+  const ctx = useMemo(() => ({ o, reload }), [o, reload]);
   const open = (t, inner = null) => { setTab(t); setSub(inner); window.scrollTo({ top: 0 }); };
-  const online = s.users.filter((u) => u.online).length;
-  const peers = s.routers.filter((r) => r.role === 'entry').reduce((a, r) => a + r.peers, 0);
-  const alerts = s.logs.filter((l) => l.level === 'critical').length + s.routers.filter((r) => r.status !== 'online').length;
-  const TABS = [
-    { id: 'routers', label: 'روترها و نودها', icon: Router, count: s.routers.length, C: Routers },
-    { id: 'users', label: 'کاربران و حجم', icon: Users, count: s.users.length, C: UsersTable },
-    { id: 'servers', label: 'سرورهای بازی و RCON', icon: Crosshair, count: s.servers.length, C: GameServers },
-    { id: 'sales', label: 'فروش و درگاه', icon: Banknote, C: Sales },
+  const peers = o.routers.filter((r) => r.role === 'entry').reduce((a, r) => a + r.peers, 0);
+  const maxCpu = Math.max(0, ...o.routers.filter((r) => r.status === 'online').map((r) => r.cpu));
+  const alerts = o.counts.critical + o.routers.filter((r) => r.enabled && r.status === 'offline').length;
+  const ALL = [
+    { id: 'routers', label: 'روترها و نودها', icon: Router, count: o.routers.length, C: Routers, admin: true },
+    { id: 'users', label: 'کاربران و حجم', icon: Users, count: o.counts.users, C: UsersTable },
+    { id: 'servers', label: 'سرورهای بازی و RCON', icon: Crosshair, count: o.servers.length, C: GameServers, admin: true },
+    { id: 'sales', label: 'فروش و درگاه', icon: Banknote, C: Sales, admin: true },
+    { id: 'tickets', label: 'تیکت‌های پشتیبانی', icon: LifeBuoy, C: Tickets },
     { id: 'logs', label: 'لاگ امنیتی و API', icon: ScrollText, C: Logs },
-    { id: 'settings', label: 'تنظیمات سایت', icon: SlidersHorizontal, C: Settings },
+    { id: 'settings', label: 'تنظیمات سایت', icon: SlidersHorizontal, C: Settings, admin: true },
   ];
-  const Current = TABS.find((t) => t.id === tab).C;
+  const TABS = ALL.filter((t) => role === 'admin' || !t.admin);
+  const current = TABS.find((t) => t.id === tab) ?? TABS[0];
+  const Current = current.C;
   return (
-    <div className="gutter mx-auto max-w-6xl pt-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black">مرکز کنترل</h1>
-          <p className="mt-1 text-sm text-zinc-500">نقش <Mono className="font-bold text-white">SUPER_ADMIN</Mono> · نشست از <Mono>10.0.0.2</Mono></p>
+    <AdminCtx.Provider value={ctx}>
+      <div className="gutter mx-auto max-w-6xl pt-10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black">مرکز کنترل</h1>
+            <p className="mt-1 text-sm text-zinc-500">نقش <Mono className="font-bold text-white">{role === 'admin' ? 'ADMIN' : 'SUPPORT'}</Mono></p>
+          </div>
+          <Badge tone={alerts ? 'bad' : 'ok'} icon={ShieldAlert}>{alerts ? `${fa(alerts)} هشدار در ۲۴ ساعت` : 'بدون هشدار'}</Badge>
         </div>
-        <Badge tone={alerts ? 'bad' : 'ok'} icon={ShieldAlert}>{alerts ? `${fa(alerts)} هشدار باز` : 'بدون هشدار'}</Badge>
+        <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line lg:grid-cols-4">
+          <Stat label="تانل‌های متصل (handshake < ۳ دقیقه)" value={<Mono>{o.counts.online}/{o.counts.users}</Mono>} />
+          <Stat label="WireGuard Peers" value={<Mono>{peers}</Mono>} sub="روی نودهای ورودی" />
+          <Stat label="بیشترین بار CPU" value={<Mono>{maxCpu}%</Mono>} tone={maxCpu > 80 ? 'text-brand2' : 'text-white'} />
+          <Stat label="بازیکن روی سرورها" value={<Mono>{o.servers.reduce((a, v) => a + v.players, 0)}</Mono>} />
+        </div>
+        <RailLayout tabs={TABS} value={current.id} onChange={(t) => open(t)}><Current key={`${current.id}-${sub}`} open={open} sub={sub} role={role} /></RailLayout>
       </div>
-      <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line lg:grid-cols-4">
-        <Stat label="کاربر آنلاین (حساب‌های نمونه)" value={<Mono>{online}/{s.users.length}</Mono>} />
-        <Stat label="WireGuard Peers فعال" value={<Mono>{peers}</Mono>} sub="روی نودهای ورودی" />
-        <Stat label="بیشترین بار CPU" value={<Mono>{Math.max(...s.routers.map((r) => r.cpu))}%</Mono>} tone={Math.max(...s.routers.map((r) => r.cpu)) > 80 ? 'text-brand2' : 'text-white'} />
-        <Stat label="بازیکن روی سرورها" value={<Mono>{s.servers.reduce((a, v) => a + v.players, 0)}</Mono>} />
-      </div>
-      <RailLayout tabs={TABS} value={tab} onChange={(t) => open(t)}><Current key={`${tab}-${sub}`} open={open} sub={sub} /></RailLayout>
-    </div>
+    </AdminCtx.Provider>
   );
 }

@@ -61,7 +61,8 @@ function Block({ title, desc, children, action, id }) {
 }
 
 export default function Settings({ sub }) {
-  const { s, set, toast, log } = useStore();
+  const { s, set, toast, api } = useStore();
+  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => clone(s.site));
   const [tab, setTab] = useState(SUBS.some(([k]) => k === sub) ? sub : 'home');
   const [tried, setTried] = useState(false);
@@ -117,7 +118,7 @@ export default function Settings({ sub }) {
   );
   const Small = ({ children }) => <span className="mb-1 block text-[11px] text-zinc-500">{children}</span>;
 
-  const save = () => {
+  const save = async () => {
     setTried(true);
     if (bad) {
       const first = SUBS.find(([k]) => badBy[k])?.[0];
@@ -127,11 +128,18 @@ export default function Settings({ sub }) {
     const next = clone(draft);
     next.feats = Object.fromEntries(Object.entries(next.feats).map(([k, v]) => [k, v.map((x) => x.trim()).filter(Boolean)]));
     next.games = next.games.map((g) => ({ ...g, short: g.short?.trim() || g.name.trim(), name: g.name.trim() }));
-    set({ site: next });
-    setDraft(next);
-    setTried(false);
-    log('admin', 'info', 'site.settings.update · تنظیمات سایت ذخیره شد');
-    toast('تنظیمات ذخیره شد و روی سایت اعمال شد.');
+    setSaving(true);
+    try {
+      const saved = await api('/api/admin/site', { method: 'PUT', body: next });
+      set({ site: saved });
+      setDraft(clone(saved));
+      setTried(false);
+      toast('تنظیمات ذخیره شد و روی سایت اعمال شد.');
+    } catch (err) {
+      toast(err.message, 'bad');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const exportJson = JSON.stringify(draft, null, 2);
@@ -535,7 +543,7 @@ export default function Settings({ sub }) {
           </span>
           <Btn variant="ghost" size="sm" icon={RotateCcw} onClick={() => { setDraft(seedSite()); setTried(false); }}>پیش‌فرض</Btn>
           <Btn variant="ghost" size="sm" disabled={!dirty} onClick={() => { setDraft(clone(s.site)); setTried(false); }}>لغو</Btn>
-          <Btn icon={Save} disabled={!dirty} onClick={save}>ذخیره</Btn>
+          <Btn icon={Save} disabled={!dirty} busy={saving} onClick={save}>ذخیره</Btn>
         </div>
       </div>
     </div>

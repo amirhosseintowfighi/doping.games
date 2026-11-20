@@ -1,0 +1,34 @@
+# Production-style stack: app + PostgreSQL. Copy .env.example to .env and fill it in first.
+#   docker compose up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: doping
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: doping
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doping"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://doping:${POSTGRES_PASSWORD}@db:5432/doping
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  pgdata:
