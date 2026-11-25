@@ -247,7 +247,7 @@ export const seedSite = () => ({
     ['حجمم تموم بشه چی می‌شه؟', 'اتصال تانل تا خرید حجم متوقف می‌شه. از پنل می‌تونی ترافیک مازاد بخری یا یک‌کلیکی تمدید کنی؛ همون لحظه دوباره وصل می‌شی.'],
     ['روی کنسول هم کار می‌کنه؟', 'DNS ضد تحریم روی PS5 و Xbox مستقیم تنظیم می‌شه. برای کاهش پینگ روی کنسول، کانفیگ WireGuard رو روی روترت بذار.'],
     ['آی‌پی اینترنتم عوض بشه DNS قطع می‌شه؟', 'آره، چون DNS فقط به آی‌پی‌های ثبت‌شده جواب می‌ده. توی پنل دکمه «ثبت آی‌پی فعلی من» رو بزن تا دوباره کار کنه.'],
-    ['روی چند دستگاه می‌تونم وصل بشم؟', 'هر اشتراک یک کانفیگ داره. اگه روی دستگاه دیگه‌ای جا مونده، کلید رو از پنل ریست کن.'],
+    ['روی چند دستگاه می‌تونم وصل بشم؟', 'کاهش پینگ تا ۲ دستگاه و پکیج پرو تا ۳ دستگاه همزمان؛ هر دستگاه کانفیگ جدای خودش رو از «مرکز اتصال» می‌گیره و همه از یک حجم مصرف می‌کنن.'],
   ].map(([q, a]) => ({ id: uid(), q, a })),
   feats: {
     ping: ['تانل WireGuard اختصاصی', 'خروجی عمان، امارات، اروپا', 'ویندوز، موبایل و روتر'],
@@ -256,6 +256,12 @@ export const seedSite = () => ({
   },
   dns: { ...DNS },
   wg: { ...WG },
+  account: {
+    /** Configs per subscription, the main one included. */
+    devices: { ping: 2, pro: 3 },
+    /** Share of a referred friend's first purchase credited to the referrer's wallet. 0 turns referrals off. */
+    referralPercent: 10,
+  },
   accent: '#E60012',
   motion: true,
   footer: 'دوپینگ، شبکه گیمینگ ایران',
@@ -315,6 +321,9 @@ export function validateSite(c) {
   if (!/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}(\s*,\s*(\d{1,3}\.){3}\d{1,3}\/\d{1,2})*$/.test(c.wg.allowed)) e['wg.allowed'] = 'مثل 0.0.0.0/0 یا چند CIDR با ویرگول.';
   if (!(+c.wg.mtu >= 1280 && +c.wg.mtu <= 1500)) e['wg.mtu'] = 'بین 1280 تا 1500';
   if (!/^#[0-9a-f]{6}$/i.test(c.accent)) e.accent = 'کد رنگ مثل #E60012';
+  range('account.devices.ping', c.account.devices.ping, 1, 10);
+  range('account.devices.pro', c.account.devices.pro, 1, 10);
+  range('account.referralPercent', c.account.referralPercent, 0, 50);
   return e;
 }
 
@@ -324,7 +333,8 @@ export function validateSite(c) {
  */
 export function migrateSite(saved, base, guess) {
   const next = { ...base, ...saved };
-  for (const k of ['show', 'hero', 'planNames', 'kinds', 'banner', 'dns', 'wg', 'feats']) next[k] = { ...base[k], ...(saved[k] ?? {}) };
+  for (const k of ['show', 'hero', 'planNames', 'kinds', 'banner', 'dns', 'wg', 'feats', 'account']) next[k] = { ...base[k], ...(saved[k] ?? {}) };
+  next.account.devices = { ...base.account.devices, ...(saved.account?.devices ?? {}) };
   next.text = Object.fromEntries(Object.keys(base.text).map((k) => [k, { ...base.text[k], ...(saved.text?.[k] ?? {}) }]));
   // Builds before v2 stored only { name, isp, dp, cover, mb } per game: fill the rest from the matching default.
   next.games = (saved.games ?? base.games).map((g) => {

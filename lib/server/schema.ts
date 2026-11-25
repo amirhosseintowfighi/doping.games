@@ -2,12 +2,15 @@
 // under ./drizzle, and the app applies pending migrations on start (lib/server/boot.ts).
 import { sql } from 'drizzle-orm';
 import {
-  bigint, bigserial, boolean, check, date, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, uuid,
+  bigint, customType, bigserial, boolean, check, date, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
 
 const now = () => timestamp({ withTimezone: true, mode: 'date' }).notNull().defaultNow();
 const ts = () => timestamp({ withTimezone: true, mode: 'date' });
 const bytes = () => bigint({ mode: 'number' });
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+export type NotifyPrefs = { email: boolean; telegram: boolean; sms: boolean };
 
 export const users = pgTable('users', {
   id: uuid().primaryKey().defaultRandom(),
@@ -20,9 +23,20 @@ export const users = pgTable('users', {
   perks: jsonb().$type<{ slot: boolean; tag: boolean; skins: boolean }>().notNull().default({ slot: true, tag: true, skins: false }),
   disabledAt: ts(),
   lastLoginAt: ts(),
+  emailVerifiedAt: ts(),
+  phone: text(), // normalised 09xxxxxxxxx
+  phoneVerifiedAt: ts(),
+  telegramChatId: text(),
+  notify: jsonb().$type<NotifyPrefs>().notNull().default({ email: true, telegram: true, sms: false }),
+  refCode: text(),
+  referredBy: uuid(),
+  referralRewardedAt: ts(),
   createdAt: now(),
 }, (t) => [
   uniqueIndex('users_email_uq').on(sql`lower(${t.email})`),
+  uniqueIndex('users_phone_uq').on(t.phone),
+  uniqueIndex('users_ref_uq').on(t.refCode),
+  uniqueIndex('users_telegram_uq').on(t.telegramChatId),
   uniqueIndex('users_username_uq').on(sql`lower(${t.username})`),
   uniqueIndex('users_steam_uq').on(t.steamId),
   check('users_wallet_nonneg', sql`${t.wallet} >= 0`),
@@ -93,11 +107,27 @@ export const subscriptions = pgTable('subscriptions', {
   provisionError: text(),
   lastHandshake: ts(),
   usageSyncedAt: ts(),
+  autoRenew: boolean().notNull().default(false),
   createdAt: now(),
 }, (t) => [
   uniqueIndex('subscriptions_user_uq').on(t.userId), // one service per account; renewals extend it
   uniqueIndex('subscriptions_ip_uq').on(t.tunnelIp),
 ]);
+
+/** Extra WireGuard peers on the same subscription (phone, console router…). They share its quota and queue. */
+export const devices = pgTable('devices', {
+  id: uuid().primaryKey().defaultRandom(),
+  subscriptionId: uuid().notNull().references(() => subscriptions.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  tunnelIp: text().notNull(),
+  wgPublicKey: text().notNull(),
+  wgPrivateKeyEnc: text().notNull(), // AAD device:<id>:wg_private_key
+  wgPresharedKeyEnc: text().notNull(),
+  peerId: text(),
+  routerId: uuid().references(() => routers.id, { onDelete: 'set null' }),
+  lastHandshake: ts(),
+  createdAt: now(),
+}, (t) => [uniqueIndex('devices_ip_uq').on(t.tunnelIp), index('devices_sub_idx').on(t.subscriptionId)]);
 
 export const usageDaily = pgTable('usage_daily', {
   subscriptionId: uuid().notNull().references(() => subscriptions.id, { onDelete: 'cascade' }),
@@ -183,6 +213,8 @@ export const gameServers = pgTable('game_servers', {
   tick: text().notNull().default(''),
   enabled: boolean().notNull().default(true), // shown on the site
   sort: integer().notNull().default(0),
+  vipTokenHash: text(), // sha256 of the token the server uses to download its VIP list
+  vipFetchedAt: ts(),
   status: text({ enum: ['unknown', 'online', 'offline'] }).notNull().default('unknown'),
   players: integer().notNull().default(0),
   bots: integer().notNull().default(0),
@@ -228,4 +260,62 @@ export const siteSettings = pgTable('site_settings', {
   version: integer().notNull().default(1),
   updatedAt: now(),
   updatedBy: text(),
+});
+
+export const ticketAttachments = pgTable('ticket_attachments', {
+  id: uuid().primaryKey().defaultRandom(),
+  messageId: bigint({ mode: 'number' }).notNull().references(() => ticketMessages.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  mime: text().notNull(),
+  size: integer().notNull(),
+  data: bytea().notNull(),
+  createdAt: now(),
+}, (t) => [index('ticket_attachments_msg_idx').on(t.messageId)]);
+
+/** One-time codes and links: password reset, email verification, phone OTP, Telegram linking. Only hashes are stored. */
+export const authTokens = pgTable('auth_tokens', {
+  id: uuid().primaryKey().defaultRandom(),
+  userId: uuid().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text({ enum: ['reset', 'verify_email', 'phone_verify', 'login_otp', 'telegram'] }).notNull(),
+  tokenHash: text().notNull(),
+  target: text().notNull().default(''), // phone number or email the code was sent to
+  attempts: integer().notNull().default(0),
+  expiresAt: ts().notNull(),
+  usedAt: ts(),
+  createdAt: now(),
+}, (t) => [index('auth_tokens_lookup_idx').on(t.kind, t.tokenHash), index('auth_tokens_user_idx').on(t.userId, t.kind)]);
+
+export const notifications = pgTable('notifications', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  userId: uuid().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  key: text().notNull(), // dedupe key, e.g. exp3:<expiry ms>
+  level: text({ enum: ['info', 'warn', 'bad'] }).notNull().default('info'),
+  title: text().notNull(),
+  body: text().notNull(),
+  readAt: ts(),
+  createdAt: now(),
+}, (t) => [uniqueIndex('notifications_user_key_uq').on(t.userId, t.key), index('notifications_user_idx').on(t.userId, t.createdAt)]);
+
+/** Every outgoing email / SMS / Telegram message and how it went. */
+export const outbox = pgTable('outbox', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  channel: text({ enum: ['email', 'sms', 'telegram'] }).notNull(),
+  to: text().notNull(),
+  subject: text().notNull().default(''),
+  body: text().notNull(), // redacted unless DEV_OUTBOX is on
+  status: text({ enum: ['sent', 'failed', 'skipped'] }).notNull(),
+  error: text(),
+  createdAt: now(),
+}, (t) => [index('outbox_at_idx').on(t.createdAt)]);
+
+/** Fixed-window request counters shared by every app instance. */
+export const rateLimits = pgTable('rate_limits', {
+  key: text().primaryKey(),
+  hits: integer().notNull(),
+  windowStart: ts().notNull(),
+});
+
+export const kv = pgTable('kv', {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
 });

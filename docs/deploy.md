@@ -16,7 +16,17 @@
 | `PAYMENT_MODE` | `live` یا `sandbox` (فقط وقتی مرچنت تنظیم شده). |
 | `POSTGRES_PASSWORD` | رمز دیتابیس در docker-compose. |
 
-اختیاری: `REGISTRATION=false` (ثبت‌نام بسته)، `QUOTA_INTERVAL_SEC` (پیش‌فرض ۳۰۰ ثانیه)، `SERVER_POLL_SEC` (پیش‌فرض ۳۰)، `TRUST_PROXY`، `COOKIE_SECURE`.
+اختیاری: `REGISTRATION=false` (ثبت‌نام بسته)، `QUOTA_INTERVAL_SEC` (پیش‌فرض ۳۰۰ ثانیه)، `SERVER_POLL_SEC` (پیش‌فرض ۳۰)، `NOTIFY_INTERVAL_SEC` (پیش‌فرض ۶۰۰)، `TRUST_PROXY`، `COOKIE_SECURE`.
+
+### کانال‌های پیام (اختیاری)
+
+هر کانال فقط وقتی متغیرهایش پر باشد روشن می‌شود؛ بدون آن‌ها هم اپ کامل کار می‌کند و فقط همان امکان در پنل پنهان یا غیرفعال می‌شود. وضعیت هر کانال و همه پیام‌های ارسالی در «مرکز کنترل → اعلان و پیام‌ها» دیده می‌شود.
+
+| متغیر | چه چیزی را روشن می‌کند |
+|---|---|
+| `SMTP_URL`، `MAIL_FROM` | ایمیل: تایید ایمیل بعد از ثبت‌نام، **بازیابی رمز**، رسید پرداخت، هشدار حجم و انقضا. مثال: `smtps://user:pass@mail.example.com:465` |
+| `KAVENEGAR_API_KEY`، `KAVENEGAR_SENDER`، `KAVENEGAR_OTP_TEMPLATE` | پیامک کاوه‌نگار: تایید شماره موبایل، **ورود با کد پیامکی**، هشدار پیامکی. برای کدها بهتر است یک قالب «verify/lookup» با `%token%` بسازی. |
+| `TELEGRAM_BOT_TOKEN`، `TELEGRAM_BOT_USERNAME`، `TELEGRAM_API_BASE` | ربات تلگرام: هشدارها و دستور `/status`. اگر سرور به `api.telegram.org` دسترسی ندارد، `TELEGRAM_API_BASE` را روی یک relay بگذار. |
 
 ## ۲. اجرا با Docker Compose (VPS یا هر سروری با Docker)
 
@@ -62,6 +72,14 @@ docker compose up -d --build
 ```
 
 پنل از طریق همین REST، Peer و Simple Queue هر مشتری را می‌سازد، حجم مصرفی را از شمارنده صف‌ها می‌خواند و وقتی حجم یا زمان تمام شد Peer را غیرفعال می‌کند. آی‌پی‌های DNS در address-list `doping-dns-allowed` ثبت می‌شوند؛ فایروال DNS باید فقط به همین لیست جواب بدهد.
+
+**چند دستگاه:** هر دستگاه اضافه (تا سقفی که در «تنظیمات سایت → دستگاه‌ها و معرفی» تعیین می‌کنی) Peer و آی‌پی تانل خودش را دارد، ولی همه در یک Simple Queue جمع می‌شوند تا حجم مشترک حساب شود.
+
+**نود خروجی:** آی‌پی‌های تانل هر مشتری در address-list `doping-exit-mct`، `doping-exit-dxb` یا `doping-exit-fra` قرار می‌گیرند. قوانین mangle و routing لازم برای فرستادن هر لیست از خروجی خودش در `docs/routeros/iran-edge.rsc` (بخش 3b) آمده است.
+
+## ۵.۱. لیست VIP سرورهای بازی
+
+در «سرورهای بازی» روی آیکون تاج هر سرور بزن و توکن بساز. پنل یک خط crontab می‌دهد که هر دقیقه لیست VIP را با فرمت `admins_simple.ini` سورس‌مود از `/api/servers/vip` می‌گیرد (پرچم‌ها: `a` اسلات رزرو، `o` تگ VIP، `p` اسکین). اگر رمز RCON سرور ثبت شده باشد، پنل حدود یک دقیقه بعد از هر تغییر `sm_reloadadmins` را هم می‌فرستد. پلاگین تگ و اسکین باید به پرچم‌های `o` و `p` نگاه کند.
 
 ## ۶. پشتیبان‌گیری
 

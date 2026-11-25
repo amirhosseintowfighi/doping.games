@@ -3,14 +3,16 @@ import Link from 'next/link';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import {
+  Bell, Gift, Lock, LogOut, Mail, MessageCircle, MonitorSmartphone, Navigation, Phone, Repeat, UserCog,
   ArrowDown, ArrowUp, CalendarClock, Check, Gamepad2, Monitor, Router as RouterIcon, Smartphone, CircleAlert, Crown, Download, Eye, EyeOff, Fingerprint, Globe, KeyRound, LayoutDashboard, LifeBuoy,
   Link2, Plus, QrCode, Receipt, RefreshCw, Send, ShieldCheck, Trash2, Unlink, Wallet, Wifi, Zap,
 } from 'lucide-react';
 import { useStore } from '../store.jsx';
+import { Attachments, FilePicker } from './parts.jsx';
 import { Ring } from '../art.jsx';
 import { CountUp } from '../motion.jsx';
 import { Badge, Btn, Card, CopyBtn, cx, Dot, Field, Modal, Mono, Progress, RailLayout, Toggle } from '../ui.jsx';
-import { daysLeft, fa, faDate, GB, gb, isIPv4, isPrivate, pingTiers, priceOf, tierLabel, toman } from '../data.js';
+import { daysLeft, EXITS, fa, faDate, GB, gb, isIPv4, isPrivate, pingTiers, priceOf, tierLabel, toman } from '../data.js';
 
 const Panel = createContext(null);
 const usePanel = () => useContext(Panel);
@@ -84,6 +86,28 @@ const ago = (t) => {
   return sec < 90 ? `${sec}s ago` : sec < 5400 ? `${Math.round(sec / 60)}m ago` : `${Math.round(sec / 3600)}h ago`;
 };
 
+/** Renews the same plan from the wallet during the last day of the period. */
+function AutoRenew() {
+  const { api, toast } = useStore();
+  const { d, reload } = usePanel();
+  const on = !!d.sub?.autoRenew;
+  return (
+    <label className="ms-auto flex items-center gap-2.5 text-xs text-silver" title="روز آخر اشتراک، همین پلن از موجودی کیف پول تمدید می‌شه.">
+      <Repeat className="size-4" /> تمدید خودکار از کیف پول
+      <Toggle
+        label="تمدید خودکار" checked={on}
+        onChange={async (v) => {
+          try {
+            await api('/api/me/autorenew', { method: 'PUT', body: { on: v } });
+            await reload();
+            toast(v ? 'تمدید خودکار روشن شد؛ روز آخر، اگه موجودی کافی باشه خودش تمدید می‌شه.' : 'تمدید خودکار خاموش شد.', v ? 'ok' : 'warn');
+          } catch (e) { toast(e.message, 'bad'); }
+        }}
+      />
+    </label>
+  );
+}
+
 function Dashboard({ setTab }) {
   const { s } = useStore();
   const { d } = usePanel();
@@ -149,9 +173,10 @@ function Dashboard({ setTab }) {
             </div>
           </div>
         )}
-        <div className="mt-6 flex flex-wrap gap-2 border-t border-line pt-5">
+        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-line pt-5">
           {!dnsOnly && <Btn icon={Plus} onClick={() => setExtra(true)} disabled={unlimited || me.status === 'expired'}>خرید حجم اضافه (ترافیک مازاد)</Btn>}
           <Btn variant="outline" icon={RefreshCw} onClick={() => setRenew(true)}>تمدید یک‌کلیکی</Btn>
+          <AutoRenew />
         </div>
       </Card>
 
@@ -421,8 +446,11 @@ function Connect({ setTab }) {
   const [qr, setQr] = useState(false);
   const [reset, setReset] = useState(false);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => api('/api/me/config').then((c) => { setConf(c); setErr(''); }).catch((e) => setErr(e.message)), [api]);
+  const [target, setTarget] = useState(null); // null = main config, otherwise a device id
+  const device = d.devices.find((x) => x.id === target) ?? null;
+  const load = useCallback(() => api(`/api/me/config${target ? `?device=${target}` : ''}`).then((c) => { setConf(c); setErr(''); }).catch((e) => setErr(e.message)), [api, target]);
   useEffect(() => { if (me?.hasTunnel) load(); }, [me?.hasTunnel, load]);
+  useEffect(() => { if (target && !d.devices.some((x) => x.id === target)) setTarget(null); }, [d.devices, target]);
 
   if (!me) return <NoPlan />;
   if (!me.hasTunnel) {
@@ -441,7 +469,7 @@ function Connect({ setTab }) {
   if (!conf) return <Card className="p-8 text-center text-sm text-silver">{err || 'در حال آماده‌سازی کانفیگ…'}</Card>;
 
   const masked = conf.text.replace(conf.priv, '•'.repeat(44)).replace(conf.psk, '•'.repeat(44));
-  const file = `doping-${(me.router ?? 'edge').toLowerCase()}.conf`;
+  const file = `doping-${device ? device.name.replace(/[^\w-]+/g, '-').toLowerCase() || 'device' : (me.router ?? 'edge').toLowerCase()}.conf`;
   const download = () => {
     try {
       const url = URL.createObjectURL(new Blob([conf.text], { type: 'text/plain' }));
@@ -458,7 +486,7 @@ function Connect({ setTab }) {
   const doReset = async () => {
     setBusy(true);
     try {
-      const r = await api('/api/me/keys', { method: 'POST' });
+      const r = await api('/api/me/keys', { method: 'POST', body: target ? { device: target } : {} });
       await load();
       await reload();
       setReset(false);
@@ -480,7 +508,7 @@ function Connect({ setTab }) {
       )}
       <Card className="min-w-0 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><KeyRound className="size-4 text-brand2" /> کانفیگ WireGuard</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><KeyRound className="size-4 text-brand2" /> کانفیگ WireGuard{device && <span className="text-silver">· {device.name}</span>}</h3>
           <Mono className="text-xs text-silver">{file}</Mono>
         </div>
         <div className="relative mt-4">
@@ -511,10 +539,12 @@ function Connect({ setTab }) {
             ))}
           </div>
         </Card>
+        <ExitPicker />
+        <Devices target={target} setTarget={setTarget} />
         <Card className="border-amber-500/20 p-5">
-          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Fingerprint className="size-4 text-warn" /> ریست کلید اتصال</h3>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Fingerprint className="size-4 text-warn" /> ریست کلید {device ? `«${device.name}»` : 'کانفیگ اصلی'}</h3>
           <p className="mt-2 text-xs leading-6 text-silver">
-            اگه کانفیگت لو رفته یا روی دستگاه دیگه‌ای مونده، کلید رو ریست کن. Peer روی میکروتیک با کلید جدید بازسازی می‌شه و همه دستگاه‌های قبلی قطع می‌شن.
+            اگه این کانفیگ لو رفته یا روی دستگاهی مونده که دیگه نمی‌خوای، کلیدش رو ریست کن. Peer همین کانفیگ روی میکروتیک با کلید جدید بازسازی می‌شه؛ بقیه دستگاه‌هات وصل می‌مونن.
           </p>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] text-zinc-500">آخرین ریست: {me.keysRotatedAt ? faDate(me.keysRotatedAt) : '—'}</span>
@@ -535,9 +565,98 @@ function Connect({ setTab }) {
         open={reset} onClose={() => !busy && setReset(false)} title="کلید اتصال ریست بشه؟" icon={CircleAlert}
         footer={<><Btn variant="ghost" onClick={() => setReset(false)} disabled={busy}>نه، بی‌خیال</Btn><Btn variant="danger" busy={busy} onClick={doReset}>آره، کلید جدید بساز</Btn></>}
       >
-        <p className="text-sm leading-7 text-silver">با این کار کانفیگ فعلی روی همه دستگاه‌هات از کار می‌افته و باید کانفیگ جدید رو دوباره وارد کنی. حجم و زمان اشتراکت تغییری نمی‌کنه.</p>
+        <p className="text-sm leading-7 text-silver">با این کار کانفیگ {device ? `«${device.name}»` : 'اصلی'} از کار می‌افته و باید کانفیگ جدیدش رو دوباره وارد کنی. بقیه دستگاه‌ها، حجم و زمان اشتراکت تغییری نمی‌کنن.</p>
       </Modal>
     </div>
+  );
+}
+
+/** The exit node the tunnel leaves from. Changing it only moves the router-side address-lists. */
+function ExitPicker() {
+  const { api, toast, s } = useStore();
+  const { d, reload } = usePanel();
+  const [busy, setBusy] = useState(null);
+  const featured = s.site.games.filter((g) => g.featured).slice(0, 3);
+  const pick = async (exit) => {
+    if (exit === d.sub.exit) return;
+    setBusy(exit);
+    try {
+      const r = await api('/api/me/exit', { method: 'PUT', body: { exit } });
+      await reload();
+      toast(r.routerUpdated ? 'خروجی عوض شد. کانفیگ لازم نیست عوض بشه؛ از اتصال بعدی مسیر جدید فعاله.' : 'خروجی ثبت شد؛ با اولین سینک روتر اعمال می‌شه.', r.routerUpdated ? 'ok' : 'warn');
+    } catch (e) { toast(e.message, 'bad'); }
+    setBusy(null);
+  };
+  return (
+    <Card className="p-5">
+      <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Navigation className="size-4 text-brand2" /> نود خروجی</h3>
+      <p className="mt-1 text-xs leading-6 text-silver">هر بازی به دیتاسنتر نزدیک‌ترین خروجی رو می‌خواد. کانفیگت ثابت می‌مونه.</p>
+      <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label="نود خروجی">
+        {EXITS.map((x) => (
+          <button key={x.id} type="button" role="radio" aria-checked={d.sub.exit === x.id} disabled={!!busy} onClick={() => pick(x.id)} className={cx('relative rounded-2xl p-3 text-center transition disabled:opacity-60', d.sub.exit === x.id ? 'glass-red' : 'well hover:bg-white/[0.04]')}>
+            <Mono className="block text-xs text-silver">{x.code}</Mono>
+            <span className="block text-sm font-bold">{x.name}</span>
+            <span className="block text-[11px] text-zinc-500">{busy === x.id ? '…' : featured.map((g) => `${g.short || g.name} ${g.via[x.id]}ms`).join(' · ')}</span>
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/** Extra configs on the same subscription (phone, console router…): one quota, one queue, own keys. */
+function Devices({ target, setTarget }) {
+  const { api, toast } = useStore();
+  const { d, reload } = usePanel();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const max = d.deviceLimit;
+  const used = 1 + d.devices.length;
+  const add = async () => {
+    setBusy(true);
+    try {
+      const r = await api('/api/me/devices', { method: 'POST', body: { name: name.trim() } });
+      await reload();
+      setName('');
+      setTarget(r.id);
+      toast('دستگاه جدید ساخته شد؛ کانفیگش رو از همین صفحه وارد کن.');
+    } catch (e) { toast(e.message, 'bad'); }
+    setBusy(false);
+  };
+  const remove = async (x) => {
+    try {
+      await api('/api/me/devices', { method: 'DELETE', body: { id: x.id } });
+      await reload();
+      toast(`«${x.name}» حذف شد و Peerش از روتر برداشته شد.`, 'warn');
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+  const Row = ({ id, label, ip, online }) => (
+    <li className={cx('flex items-center gap-2 rounded-xl px-3 py-2', target === id ? 'bg-white/[0.08]' : 'well')}>
+      <span className={cx('size-2 shrink-0 rounded-full', online ? 'bg-ok' : 'bg-zinc-600')} />
+      <button type="button" onClick={() => setTarget(id)} aria-pressed={target === id} className="min-w-0 flex-1 text-start">
+        <span className="block truncate text-sm font-bold">{label}</span>
+        <Mono className="block text-[11px] text-zinc-500">{ip}/32{online ? ' · متصل' : ''}</Mono>
+      </button>
+      {id && <button type="button" aria-label={`حذف ${label}`} onClick={() => remove(d.devices.find((x) => x.id === id))} className="grid size-8 place-items-center rounded-lg text-silver hover:bg-red-500/15 hover:text-red-300"><Trash2 className="size-4" /></button>}
+    </li>
+  );
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2.5 text-[15px] font-black"><MonitorSmartphone className="size-4 text-brand2" /> دستگاه‌ها</h3>
+        <Badge tone={used >= max ? 'warn' : 'mute'}><Mono>{used}/{max}</Mono></Badge>
+      </div>
+      <ul className="mt-3 space-y-1.5">
+        <Row id={null} label="کانفیگ اصلی" ip={d.sub.ip} online={d.sub.mainOnline} />
+        {d.devices.map((x) => <Row key={x.id} id={x.id} label={x.name} ip={x.ip} online={x.online} />)}
+      </ul>
+      {used < max ? (
+        <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (name.trim().length >= 2) add(); }}>
+          <input id="dev-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={30} placeholder="اسم دستگاه، مثلاً موبایل" className="field" />
+          <Btn type="submit" icon={Plus} busy={busy} disabled={name.trim().length < 2}>افزودن</Btn>
+        </form>
+      ) : <p className="mt-3 text-[11px] text-zinc-500">به سقف دستگاه‌های پلنت رسیدی. برای دستگاه جدید، یکی رو حذف کن{d.sub.kind === 'ping' ? ' یا پکیج پرو بگیر' : ''}.</p>}
+    </Card>
   );
 }
 
@@ -849,13 +968,16 @@ function Tickets() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ subject: '', dept: 'فنی', text: '' });
   const [reply, setReply] = useState('');
+  const [files, setFiles] = useState([]);
+  const [newFiles, setNewFiles] = useState([]);
   const t = tickets.find((x) => x.id === sel);
   const ok = form.subject.trim().length >= 5 && form.text.trim().length >= 10;
 
   const create = async () => {
     setBusy(true);
     try {
-      const r = await api('/api/me/tickets', { method: 'POST', body: { subject: form.subject.trim(), dept: form.dept, text: form.text.trim() } });
+      const r = await api('/api/me/tickets', { method: 'POST', body: { subject: form.subject.trim(), dept: form.dept, text: form.text.trim(), files: newFiles.map(({ name, data }) => ({ name, data })) } });
+      setNewFiles([]);
       await reload();
       setSel(r.id);
       setCreating(false);
@@ -867,10 +989,11 @@ function Tickets() {
     setBusy(false);
   };
   const send = async () => {
-    if (!reply.trim()) return;
+    if (!reply.trim() && !files.length) return;
     try {
-      await api(`/api/me/tickets/${sel}`, { method: 'POST', body: { text: reply.trim() } });
+      await api(`/api/me/tickets/${sel}`, { method: 'POST', body: { text: reply.trim(), files: files.map(({ name, data }) => ({ name, data })) } });
       setReply('');
+      setFiles([]);
       await reload();
     } catch (e) {
       toast(e.message, 'bad');
@@ -911,13 +1034,17 @@ function Tickets() {
               {t.msgs.map((m) => (
                 <div key={m.id} className={cx('max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-7', m.from === 'me' ? 'bg-brand/20' : 'ms-auto border border-white/8 bg-white/[0.04]')}>
                   <div className="mb-0.5 text-[11px] font-bold text-silver">{m.from === 'me' ? 'تو' : 'پشتیبانی دوپینگ'}</div>
-                  {m.text}
+                  {m.text && <span className="whitespace-pre-wrap">{m.text}</span>}
+                  <Attachments files={m.files} />
                 </div>
               ))}
             </div>
-            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
-              <input id="ticket-reply" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="پیامت رو بنویس…" className="field" />
-              <Btn type="submit" icon={Send} disabled={!reply.trim()}>ارسال</Btn>
+            <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
+              <div className="flex gap-2">
+                <input id="ticket-reply" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="پیامت رو بنویس…" className="field" />
+                <Btn type="submit" icon={Send} disabled={!reply.trim() && !files.length}>ارسال</Btn>
+              </div>
+              <FilePicker id="ticket-files" files={files} onChange={setFiles} onError={(m) => toast(m, 'warn')} />
             </form>
           </>
         ) : (
@@ -935,12 +1062,279 @@ function Tickets() {
               {['فنی', 'مالی', 'سرورهای بازی'].map((d) => <option key={d}>{d}</option>)}
             </select>
           </Field>
-          <Field label="توضیح" hint="بازی، ساعت مشکل و خروجی انتخابی رو بنویس تا سریع‌تر حل بشه.">
+          <Field label="توضیح" hint="بازی، ساعت مشکل و خروجی انتخابی رو بنویس تا سریع‌تر حل بشه. اسکرین‌شات یا خروجی tracert رو پیوست کن.">
             <textarea id="tk-text" rows={4} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} className="field resize-none" />
           </Field>
+          <FilePicker id="tk-files" files={newFiles} onChange={setNewFiles} onError={(m) => toast(m, 'warn')} />
         </div>
       </Modal>
     </div>
+  );
+}
+
+/* ───────────────────────── Account ───────────────────────── */
+
+const agentName = (ua) => {
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  return [br, os].filter(Boolean).join(' · ') || 'دستگاه ناشناس';
+};
+
+function Section({ icon: Icon, title, children, className }) {
+  return (
+    <Card className={cx('p-5 sm:p-6', className)}>
+      <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Icon className="size-4 text-brand2" /> {title}</h3>
+      <div className="mt-4">{children}</div>
+    </Card>
+  );
+}
+
+/** Runs one account write; returns true on success and shows the server's message otherwise. */
+function useWrite() {
+  const { api, toast } = useStore();
+  const { reload } = usePanel();
+  return useCallback(async (path, method, body, ok, setErrs) => {
+    try {
+      const r = await api(path, { method, body });
+      await reload();
+      if (ok) toast(ok);
+      setErrs?.({});
+      return r ?? {};
+    } catch (e) {
+      if (setErrs && Object.keys(e.fields).length) setErrs(e.fields);
+      else toast(e.message, 'bad');
+      return null;
+    }
+  }, [api, toast, reload]);
+}
+
+function EmailBox() {
+  const { d } = usePanel();
+  const write = useWrite();
+  const a = d.account;
+  const [edit, setEdit] = useState(false);
+  const [f, setF] = useState({ email: '', password: '' });
+  const [errs, setErrs] = useState({});
+  return (
+    <Section icon={Mail} title="ایمیل">
+      <div className="flex flex-wrap items-center gap-2">
+        <Mono className="min-w-0 flex-1 truncate font-bold">{d.user.email}</Mono>
+        {a.emailVerified ? <Badge tone="ok" icon={Check}>تایید شده</Badge> : <Badge tone="warn">تایید نشده</Badge>}
+      </div>
+      {!a.emailVerified && (
+        <p className="mt-2 text-xs leading-6 text-silver">
+          {d.channels.email ? 'لینک تایید به ایمیلت فرستاده شده. تا تایید نکنی، هشدارها و رسیدها با ایمیل فرستاده نمی‌شن.' : 'ارسال ایمیل هنوز روی سرور تنظیم نشده.'}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!a.emailVerified && d.channels.email && <Btn size="sm" variant="ghost" icon={Send} onClick={() => write('/api/me/email', 'POST', undefined, 'لینک تایید دوباره فرستاده شد.')}>ارسال دوباره لینک</Btn>}
+        <Btn size="sm" variant="ghost" icon={Mail} onClick={() => setEdit(!edit)}>تغییر ایمیل</Btn>
+      </div>
+      {edit && (
+        <form className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start" onSubmit={async (e) => { e.preventDefault(); if (await write('/api/me/email', 'PUT', f, 'ایمیل عوض شد؛ لینک تایید به آدرس جدید رفت.', setErrs)) { setEdit(false); setF({ email: '', password: '' }); } }}>
+          <Field label="ایمیل جدید" error={errs.email}><input id="acc-email" type="email" dir="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className="field mono" /></Field>
+          <Field label="رمز فعلی" error={errs.password}><input id="acc-email-pass" type="password" dir="ltr" autoComplete="current-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} className="field mono" /></Field>
+          <Btn type="submit" className="sm:mt-6" disabled={!f.email || !f.password}>ذخیره</Btn>
+        </form>
+      )}
+    </Section>
+  );
+}
+
+function PasswordBox() {
+  const write = useWrite();
+  const [f, setF] = useState({ current: '', next: '', again: '' });
+  const [errs, setErrs] = useState({});
+  const mismatch = f.again && f.next !== f.again;
+  const submit = async (e) => {
+    e.preventDefault();
+    if (mismatch) return;
+    if (await write('/api/me/password', 'PUT', { current: f.current, next: f.next }, 'رمز عوض شد و بقیه دستگاه‌ها از حساب خارج شدن.', setErrs)) setF({ current: '', next: '', again: '' });
+  };
+  return (
+    <Section icon={Lock} title="تغییر رمز">
+      <form className="space-y-3" onSubmit={submit}>
+        <Field label="رمز فعلی" error={errs.current}><input id="pw-current" type="password" dir="ltr" autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} className="field mono" /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="رمز جدید" hint="حداقل ۸ کاراکتر." error={errs.next}><input id="pw-next" type="password" dir="ltr" autoComplete="new-password" value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} className="field mono" /></Field>
+          <Field label="تکرار رمز جدید" error={mismatch ? 'با رمز جدید یکی نیست.' : ''}><input id="pw-again" type="password" dir="ltr" autoComplete="new-password" value={f.again} onChange={(e) => setF({ ...f, again: e.target.value })} className="field mono" /></Field>
+        </div>
+        <Btn type="submit" icon={Lock} disabled={!f.current || f.next.length < 8 || f.next !== f.again}>تغییر رمز</Btn>
+      </form>
+    </Section>
+  );
+}
+
+function PhoneBox() {
+  const { d } = usePanel();
+  const write = useWrite();
+  const a = d.account;
+  const [phone, setPhone] = useState('');
+  const [sent, setSent] = useState(null);
+  const [code, setCode] = useState('');
+  const [errs, setErrs] = useState({});
+  if (!d.channels.sms) {
+    return <Section icon={Phone} title="شماره موبایل"><p className="text-xs leading-6 text-silver">ارسال پیامک هنوز روی سرور تنظیم نشده؛ بعد از فعال شدن، با شماره موبایل هم می‌تونی وارد بشی.</p></Section>;
+  }
+  return (
+    <Section icon={Phone} title="شماره موبایل">
+      {a.phoneVerified ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Mono className="flex-1 font-bold">{a.phone}</Mono>
+          <Badge tone="ok" icon={Check}>تایید شده</Badge>
+          <Btn size="sm" variant="danger" icon={Trash2} onClick={() => write('/api/me/phone', 'DELETE', {}, 'شماره برداشته شد.')}>حذف</Btn>
+          <p className="w-full text-xs leading-6 text-silver">با همین شماره از صفحه ورود، با کد پیامکی هم وارد می‌شی.</p>
+        </div>
+      ) : sent ? (
+        <form className="flex flex-wrap items-start gap-2" onSubmit={async (e) => { e.preventDefault(); if (await write('/api/me/phone', 'PUT', { phone: sent, code }, 'شماره موبایل تایید شد.', setErrs)) { setSent(null); setCode(''); } }}>
+          <Field label={`کد ارسال‌شده به ${sent}`} error={errs.code} className="flex-1"><input id="phone-code" dir="ltr" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} className="field mono tracking-[0.4em]" /></Field>
+          <Btn type="submit" className="mt-6" disabled={code.length !== 6}>تایید</Btn>
+          <Btn variant="ghost" className="mt-6" onClick={() => setSent(null)}>تغییر شماره</Btn>
+        </form>
+      ) : (
+        <form className="flex flex-wrap items-start gap-2" onSubmit={async (e) => { e.preventDefault(); const r = await write('/api/me/phone', 'POST', { phone }, 'کد تایید پیامک شد.', setErrs); if (r) setSent(r.phone); }}>
+          <Field label="شماره موبایل" error={errs.phone} className="flex-1"><input id="phone-number" dir="ltr" inputMode="tel" placeholder="09121234567" value={phone} onChange={(e) => setPhone(e.target.value)} className="field mono" /></Field>
+          <Btn type="submit" className="mt-6" icon={Send} disabled={phone.trim().length < 10}>ارسال کد</Btn>
+        </form>
+      )}
+    </Section>
+  );
+}
+
+function NotifyBox() {
+  const { d } = usePanel();
+  const write = useWrite();
+  const a = d.account;
+  const prefs = a.notify;
+  const [busy, setBusy] = useState(false);
+  const linkTelegram = async () => {
+    setBusy(true);
+    const r = await write('/api/me/telegram', 'POST');
+    setBusy(false);
+    if (r?.url) window.open(r.url, '_blank', 'noopener');
+  };
+  const rows = [
+    ['email', 'ایمیل', a.emailVerified ? d.user.email : 'اول ایمیلت رو تایید کن', a.emailVerified && d.channels.email],
+    ['telegram', 'تلگرام', a.telegram ? 'وصل شده' : d.channels.telegram ? 'وصل نیست' : 'ربات روی سرور تنظیم نشده', a.telegram],
+    ['sms', 'پیامک', a.phoneVerified ? a.phone : 'اول شماره موبایل رو تایید کن', a.phoneVerified && d.channels.sms],
+  ];
+  return (
+    <Section icon={Bell} title="هشدارها و اطلاع‌رسانی">
+      <p className="text-xs leading-6 text-silver">هشدار ۸۰٪ و اتمام حجم، ۳ روز و ۱ روز مونده به انقضا، تمدید خودکار، رسید پرداخت و پاسخ تیکت‌ها. همه هشدارها توی پنل هم می‌مونن.</p>
+      <ul className="mt-3 space-y-2">
+        {rows.map(([k, label, sub, ready]) => (
+          <li key={k} className="flex items-center gap-3 well px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold">{label}</div>
+              <div className="truncate text-[11px] text-silver" dir="auto">{sub}</div>
+            </div>
+            {k === 'telegram' && d.channels.telegram && (a.telegram
+              ? <Btn size="sm" variant="ghost" icon={Unlink} onClick={() => write('/api/me/telegram', 'DELETE', {}, 'اتصال تلگرام برداشته شد.')}>قطع</Btn>
+              : <Btn size="sm" variant="ghost" icon={MessageCircle} busy={busy} onClick={linkTelegram}>اتصال</Btn>)}
+            <Toggle label={`هشدار ${label}`} checked={!!ready && prefs[k]} onChange={(v) => (ready ? write('/api/me/notify', 'PUT', { ...prefs, [k]: v }) : null)} />
+          </li>
+        ))}
+      </ul>
+      {d.channels.telegram && !a.telegram && <p className="mt-2 text-[11px] text-zinc-500">بعد از زدن «اتصال»، توی تلگرام دکمه Start رو بزن؛ چند ثانیه بعد اینجا «وصل شده» می‌شه.</p>}
+    </Section>
+  );
+}
+
+function ReferralBox() {
+  const { d } = usePanel();
+  const r = d.account.referrals;
+  // The origin is only known in the browser; set after hydration so server and client HTML match.
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+  if (!r.percent) return null;
+  const link = `${origin}/register?ref=${d.account.refCode}`;
+  return (
+    <Section icon={Gift} title="دعوت از دوستان">
+      <p className="text-xs leading-6 text-silver">دوستت با لینک تو ثبت‌نام کنه، از اولین خریدش <b className="text-white">{fa(r.percent)}٪</b> به کیف پولت اضافه می‌شه.</p>
+      <div className="mt-3 flex items-center gap-2 well py-1 ps-3 pe-1">
+        <Mono className="min-w-0 flex-1 truncate text-xs">{link}</Mono>
+        <CopyBtn text={link} label="کپی لینک" />
+      </div>
+      <dl className="mt-3 grid grid-cols-3 divide-x divide-x-reverse divide-line rounded-xl border border-line text-center">
+        {[['ثبت‌نام', fa(r.signups)], ['خرید کرده', fa(r.bought)], ['پاداش', toman(r.earned)]].map(([k, v]) => (
+          <div key={k} className="px-2 py-3"><dt className="text-[11px] text-zinc-500">{k}</dt><dd className="mt-0.5 text-sm font-black">{v}</dd></div>
+        ))}
+      </dl>
+      <p className="mt-2 text-[11px] text-zinc-500">کد معرف: <Mono className="text-zinc-300">{d.account.refCode}</Mono></p>
+    </Section>
+  );
+}
+
+function SessionsBox() {
+  const { d } = usePanel();
+  const write = useWrite();
+  const list = d.account.sessions;
+  return (
+    <Section icon={LogOut} title="دستگاه‌های وارد شده">
+      <ul className="space-y-2">
+        {list.map((x) => (
+          <li key={x.id} className="flex items-center gap-3 well px-4 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold">{agentName(x.agent)}{x.current && <span className="ms-2 text-[11px] text-ok">همین دستگاه</span>}</div>
+              <Mono className="text-[11px] text-zinc-500">{x.ip} · {faDate(x.at)}</Mono>
+            </div>
+            {!x.current && <Btn size="sm" variant="ghost" icon={LogOut} aria-label="خروج این دستگاه" onClick={() => write('/api/me/sessions', 'DELETE', { id: x.id }, 'اون دستگاه از حساب خارج شد.')} />}
+          </li>
+        ))}
+      </ul>
+      {list.length > 1 && <Btn size="sm" variant="danger" className="mt-3" icon={LogOut} onClick={() => write('/api/me/sessions', 'DELETE', {}, 'همه دستگاه‌های دیگه خارج شدن.')}>خروج از همه دستگاه‌های دیگه</Btn>}
+    </Section>
+  );
+}
+
+function Account() {
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <EmailBox />
+      <PhoneBox />
+      <NotifyBox />
+      <ReferralBox />
+      <PasswordBox />
+      <SessionsBox />
+    </div>
+  );
+}
+
+/* ───────────────────────── Notifications ───────────────────────── */
+
+const N_TONE = { info: 'border-white/10', warn: 'border-amber-500/30', bad: 'border-red-500/30' };
+
+function Inbox() {
+  const { api } = useStore();
+  const { d, reload } = usePanel();
+  const [open, setOpen] = useState(false);
+  const list = d.notifications;
+  const unread = list.filter((n) => !n.read).length;
+  const show = async () => {
+    setOpen(true);
+    if (unread) { try { await api('/api/me/notifications', { method: 'POST', body: { ids: 'all' } }); } catch { /* best effort */ } }
+  };
+  return (
+    <>
+      <button type="button" onClick={show} aria-label={`اعلان‌ها${unread ? ` (${fa(unread)} خوانده‌نشده)` : ''}`} className="relative grid size-10 place-items-center rounded-xl border border-line hover:bg-white/[0.05]">
+        <Bell className="size-4" />
+        {unread > 0 && <span className="absolute -top-1 -left-1 grid min-w-5 place-items-center rounded-full bg-brand px-1 text-[10px] font-black">{fa(unread)}</span>}
+      </button>
+      <Modal open={open} onClose={() => { setOpen(false); reload(); }} title="اعلان‌ها" icon={Bell}>
+        <ul className="max-h-[60vh] space-y-2 overflow-y-auto">
+          {list.map((n) => (
+            <li key={n.id} className={cx('rounded-xl border bg-white/[0.02] px-4 py-3', N_TONE[n.level])}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold">{!n.read && <span className="me-1.5 inline-block size-1.5 rounded-full bg-brand2 align-middle" />}{n.title}</span>
+                <span className="shrink-0 text-[11px] text-zinc-500">{faDate(n.at)}</span>
+              </div>
+              <p className="mt-1 text-xs leading-6 text-silver">{n.body}</p>
+            </li>
+          ))}
+          {!list.length && <li className="p-6 text-center text-sm text-silver">اعلانی نداری.</li>}
+        </ul>
+      </Modal>
+    </>
   );
 }
 
@@ -953,10 +1347,11 @@ const TABS = [
   { id: 'vip', label: 'VIP و Steam', icon: Crown, C: Vip },
   { id: 'billing', label: 'مالی', icon: Wallet, C: Billing },
   { id: 'support', label: 'پشتیبانی', icon: LifeBuoy, C: Tickets },
+  { id: 'account', label: 'حساب کاربری', icon: UserCog, C: Account },
 ];
 
-export default function UserPanel({ initial, tab: initialTab }) {
-  const { api, set } = useStore();
+export default function UserPanel({ initial, tab: initialTab, verified }) {
+  const { api, set, toast } = useStore();
   const [d, setD] = useState(initial);
   const [tab, setTab] = useState(() => (TABS.some((t) => t.id === initialTab) ? initialTab : 'dash'));
   const reload = useCallback(async () => {
@@ -971,14 +1366,29 @@ export default function UserPanel({ initial, tab: initialTab }) {
     const t = setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
     return () => clearInterval(t);
   }, [reload]);
+  useEffect(() => {
+    if (verified == null) return;
+    toast(verified === '1' ? 'ایمیلت تایید شد.' : 'لینک تایید منقضی شده؛ از همین صفحه دوباره بفرستش.', verified === '1' ? 'ok' : 'warn');
+    window.history.replaceState(null, '', '/panel?tab=account');
+  }, [verified, toast]);
   const ctx = useMemo(() => ({ d, reload }), [d, reload]);
   const Current = TABS.find((t) => t.id === tab).C;
   const me = d.sub;
   return (
     <Panel.Provider value={ctx}>
       <div className="gutter mx-auto max-w-6xl pt-10">
-        <h1 className="text-2xl font-black">سلام {d.user.username}</h1>
-        <p className="mt-1 text-sm text-zinc-500">پنل گیمر · <Mono>{d.user.email}</Mono></p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-black">سلام {d.user.username}</h1>
+            <p className="mt-1 truncate text-sm text-zinc-500">پنل گیمر · <Mono>{d.user.email}</Mono></p>
+          </div>
+          <Inbox />
+        </div>
+        {!d.account.emailVerified && d.channels.email && tab !== 'account' && (
+          <button type="button" onClick={() => setTab('account')} className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-3 text-start text-sm text-amber-200">
+            <Mail className="size-4 shrink-0" /> ایمیلت هنوز تایید نشده؛ برای گرفتن هشدار حجم و انقضا و بازیابی رمز، تاییدش کن.
+          </button>
+        )}
         <RailLayout
           tabs={TABS} value={tab} onChange={setTab}
           foot={me?.hasTunnel && (

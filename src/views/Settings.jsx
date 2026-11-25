@@ -453,6 +453,14 @@ export default function Settings({ sub }) {
             </div>
           </Block>
 
+          <Block title="دستگاه‌ها و معرفی" desc="تعداد کانفیگ همزمان هر اشتراک (با کانفیگ اصلی) و پاداش معرفی دوستان. پاداش ۰ یعنی معرفی خاموش.">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {In({ path: 'account.devices.ping', label: `دستگاه ${draft.planNames.ping}`, mono: true, num: true })}
+              {In({ path: 'account.devices.pro', label: `دستگاه ${draft.planNames.pro}`, mono: true, num: true })}
+              {In({ path: 'account.referralPercent', label: 'پاداش معرفی (٪ اولین خرید)', mono: true, num: true })}
+            </div>
+          </Block>
+
           <Block title="ویژگی‌های هر پلن" desc="هر خط یک ویژگی است که روی کارت پلن‌ها می‌آد.">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               {['ping', 'dns', 'pro'].map((key) => (

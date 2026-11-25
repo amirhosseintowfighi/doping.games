@@ -41,8 +41,8 @@ export function checkOrigin(req: Request) {
   if (!ok) fail(403, 'درخواست از مبدأ دیگری پذیرفته نمی‌شود.');
 }
 
-export function limit(key: string, max: number, windowSec: number) {
-  const r = rateLimit(key, max, windowSec);
+export async function limit(key: string, max: number, windowSec: number) {
+  const r = await rateLimit(key, max, windowSec);
   if (!r.ok) throw new HttpError(429, `تعداد درخواست‌ها زیاده. ${r.retryAfter} ثانیه دیگه دوباره امتحان کن.`);
 }
 
@@ -75,3 +75,6 @@ export function handle<A extends unknown[]>(fn: (req: Request, ...args: A) => Pr
     }
   };
 }
+
+/** Public origin for links in emails and payment callbacks. */
+export const baseUrl = (req: Request) => env.appUrl || new URL(req.url).origin;

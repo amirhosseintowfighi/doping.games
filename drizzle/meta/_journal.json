@@ -22,6 +22,13 @@
       "when": 1795176620601,
       "tag": "0002_dns_ip_per_user",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795612619698,
+      "tag": "0003_features",
+      "breakpoints": true
     }
   ]
 }

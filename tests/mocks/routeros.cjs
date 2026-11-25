@@ -29,8 +29,8 @@ function startRouterOS({ user = 'doping-api', pass, port = 0 } = {}) {
         if (!q) return send(404, {});
         const [u, d] = q.bytes.split('/').map(Number);
         q.bytes = `${u + (b.up ?? 0)}/${d + (b.down ?? 0)}`;
-        const peer = state.peers.find((p) => p['allowed-address'] === q.target);
-        if (peer) peer['last-handshake'] = '12s';
+        const targets = q.target.split(',');
+        for (const peer of state.peers.filter((p) => targets.includes(p['allowed-address']))) peer['last-handshake'] = '12s';
         return send(200, q);
       }
       const auth = Buffer.from((req.headers.authorization ?? '').replace('Basic ', ''), 'base64').toString();

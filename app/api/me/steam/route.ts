@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { audit } from '@/lib/server/audit';
+import { scheduleVipReload } from '@/lib/server/vip';
 import { requireUser } from '@/lib/server/auth';
 import { db, schema } from '@/lib/server/db';
 import { body, clientIp, fail, handle, json } from '@/lib/server/http';
@@ -15,6 +16,7 @@ export const PUT = handle(async (req) => {
   } catch {
     fail(409, 'این SteamID به حساب دیگه‌ای وصله.');
   }
-  await audit('rcon', 'info', steamId ? `steam linked ${steamId} · VIP sync on next map` : 'steam unlinked', user.username, clientIp(req));
+  scheduleVipReload();
+  await audit('rcon', 'info', steamId ? `steam linked ${steamId} · VIP list updated` : 'steam unlinked', user.username, clientIp(req));
   return json({ ok: true });
 });

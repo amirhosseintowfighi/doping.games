@@ -3,4 +3,6 @@ declare module '*.jsx' {
   const C: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   export default C;
   export const StoreProvider: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  export const ForgotForm: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  export const ResetForm: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }

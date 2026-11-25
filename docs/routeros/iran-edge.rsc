@@ -19,6 +19,20 @@
 /ip firewall address-list add list=doping-local-servers address=<GAME_SERVER_SUBNET>
 /routing rule add src-address=10.10.10.0/24 dst-address=<GAME_SERVER_SUBNET> action=lookup table=main place-before=0
 
+# ── 3b. Per-customer exit choice (panel → «نود خروجی») ──
+# The panel keeps each subscription's tunnel addresses in one address-list per exit:
+#   doping-exit-mct (Oman) · doping-exit-dxb (Dubai) · doping-exit-fra (Frankfurt).
+# Mark them and route each mark through its backbone. Rules for exits you don't run can be left out;
+# addresses in a list with no rule fall back to the default above.
+/routing table add name=via-dubai fib
+/routing table add name=via-frankfurt fib
+/ip route add dst-address=0.0.0.0/0 gateway=<DUBAI_BACKBONE_GW> routing-table=via-dubai check-gateway=ping
+/ip route add dst-address=0.0.0.0/0 gateway=<FRANKFURT_BACKBONE_GW> routing-table=via-frankfurt check-gateway=ping
+/ip firewall mangle
+add chain=prerouting in-interface=wg-doping src-address-list=doping-exit-dxb dst-address-list=!doping-local-servers action=mark-routing new-routing-mark=via-dubai passthrough=no comment="exit: Dubai"
+add chain=prerouting in-interface=wg-doping src-address-list=doping-exit-fra dst-address-list=!doping-local-servers action=mark-routing new-routing-mark=via-frankfurt passthrough=no comment="exit: Frankfurt"
+add chain=prerouting in-interface=wg-doping src-address-list=doping-exit-mct dst-address-list=!doping-local-servers action=mark-routing new-routing-mark=via-oman passthrough=no comment="exit: Oman"
+
 # ── 4. MSS clamp so game and voice packets never fragment inside the tunnel ──
 /ip firewall mangle add chain=forward protocol=tcp tcp-flags=syn in-interface=wg-doping \
     action=change-mss new-mss=clamp-to-pmtu passthrough=yes

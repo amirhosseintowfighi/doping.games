@@ -21,3 +21,5 @@ export type SiteContent = {
 export function seedSite(): SiteContent;
 export function validateSite(c: any): Record<string, string>;
 export function migrateSite(saved: any, base: SiteContent, guess: (name: string) => string): SiteContent;
+export const EXITS: Array<{ id: string; name: string; country: string; code: string }>;
+export function faDate(t: number): string;

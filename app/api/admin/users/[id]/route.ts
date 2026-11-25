@@ -14,6 +14,8 @@ const Input = z.discriminatedUnion('action', [
   z.object({ action: z.literal('wallet'), amount: z.number().int().min(-50_000_000).max(50_000_000).refine((n) => n !== 0) }),
   z.object({ action: z.literal('role'), role: z.enum(['user', 'support', 'admin']) }),
   z.object({ action: z.literal('account'), disabled: z.boolean() }),
+  z.object({ action: z.literal('verify') }),
+  z.object({ action: z.literal('logout') }),
 ]);
 
 export const POST = handle(async (req, ctx: { params: Promise<{ id: string }> }) => {
@@ -84,7 +86,15 @@ export const POST = handle(async (req, ctx: { params: Promise<{ id: string }> })
       if (b.disabled) await db.delete(schema.sessions).where(eq(schema.sessions.userId, id));
       msg = `account ${b.disabled ? 'disabled' : 'enabled'} · ${u!.username}`;
       break;
+    case 'verify':
+      await db.update(schema.users).set({ emailVerifiedAt: new Date() }).where(eq(schema.users.id, id));
+      msg = `email marked verified · ${u!.username}`;
+      break;
+    case 'logout':
+      await db.delete(schema.sessions).where(eq(schema.sessions.userId, id));
+      msg = `all sessions revoked · ${u!.username}`;
+      break;
   }
-  await audit(b.action === 'role' || b.action === 'account' || b.action === 'wallet' ? 'admin' : 'mikrotik', 'warn', msg, admin.username, ip);
+  await audit(['role', 'account', 'wallet', 'verify', 'logout'].includes(b.action) ? 'admin' : 'mikrotik', 'warn', msg, admin.username, ip);
   return json({ ok: true });
 });

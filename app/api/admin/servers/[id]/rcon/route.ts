@@ -11,7 +11,7 @@ const Input = z.object({ command: z.string().max(200) });
 
 export const POST = handle(async (req, ctx: { params: Promise<{ id: string }> }) => {
   const user = await requireAdmin(req);
-  limit(`rcon:${user.id}`, 60, 60);
+  await limit(`rcon:${user.id}`, 60, 60);
   const { id } = await ctx.params;
   const { command } = await body(req, Input);
   const bad = checkCommand(command);

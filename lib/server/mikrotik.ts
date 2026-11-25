@@ -180,14 +180,18 @@ export class MikroTikService {
     );
   }
 
-  /** Provisions a peer. Idempotent: an existing peer for the same subscription is updated, not duplicated. */
+  /**
+   * Provisions a peer. Idempotent: an existing peer with the same owner comment is updated, not duplicated.
+   * `owner` is the subscription id for the main config and `<subscription>:<device>` for extra devices.
+   */
   async provisionPeer(input: {
-    subscriptionId: string;
+    owner: string;
     publicKey: string;
     presharedKey: string;
     tunnelIp: string; // "10.10.10.14"
+    disabled?: boolean;
   }): Promise<string> {
-    const comment = ownerComment(input.subscriptionId);
+    const comment = ownerComment(input.owner);
     const existing = await this.request<WireGuardPeer[]>(
       'GET',
       '/interface/wireguard/peers' + MikroTikService.qs({ interface: this.router.wgInterface, comment }),
@@ -198,7 +202,7 @@ export class MikroTikService {
       'preshared-key': input.presharedKey,
       'allowed-address': `${input.tunnelIp}/32`,
       comment,
-      disabled: 'false',
+      disabled: String(!!input.disabled),
     };
     if (existing[0]) {
       await this.request('PATCH', `/interface/wireguard/peers/${existing[0]['.id']}`, fields);
@@ -241,7 +245,7 @@ export class MikroTikService {
    */
   async upsertQueue(input: {
     subscriptionId: string;
-    tunnelIp: string;
+    tunnelIps: string[]; // the main config plus every extra device: one queue, one quota
     maxUploadMbps: number;
     maxDownloadMbps: number;
     quotaBytes: bigint | null;
@@ -249,7 +253,7 @@ export class MikroTikService {
     const name = queueName(input.subscriptionId);
     const fields = {
       name,
-      target: `${input.tunnelIp}/32`,
+      target: input.tunnelIps.map((ip) => `${ip}/32`).join(','),
       'max-limit': `${input.maxUploadMbps}M/${input.maxDownloadMbps}M`,
       comment: `${ownerComment(input.subscriptionId)} quota=${input.quotaBytes ?? 'unlimited'}`,
       disabled: 'false',
@@ -301,6 +305,31 @@ export class MikroTikService {
 
   removeDnsIp(entryId: string): Promise<unknown> {
     return this.request('DELETE', `/ip/firewall/address-list/${entryId}`);
+  }
+
+  // ── Exit selection: one address-list per exit node, matched by mangle rules on the router ──
+
+  /**
+   * Puts the subscription's tunnel addresses in `doping-exit-<exit>` and removes them from every other
+   * exit list. The router's routing rules (docs/routeros/iran-edge.rsc) send each list out of its exit.
+   */
+  async syncExitLists(subscriptionId: string, exit: string, tunnelIps: string[]): Promise<void> {
+    const comment = `doping-exit:${subscriptionId}`;
+    const list = `doping-exit-${exit}`;
+    const current = await this.request<AddressListEntry[]>('GET', '/ip/firewall/address-list' + MikroTikService.qs({ comment }));
+    const keep = new Set<string>();
+    for (const row of current) {
+      const ip = row.address.replace(/\/32$/, '');
+      if (row.list === list && tunnelIps.includes(ip) && !keep.has(ip)) keep.add(ip);
+      else await this.request('DELETE', `/ip/firewall/address-list/${row['.id']}`);
+    }
+    for (const ip of tunnelIps) {
+      if (!keep.has(ip)) await this.request('POST', '/ip/firewall/address-list/add', { list, address: ip, comment });
+    }
+  }
+
+  async removeExitLists(subscriptionId: string): Promise<void> {
+    await this.syncExitLists(subscriptionId, '-', []);
   }
 
   close(): void {
