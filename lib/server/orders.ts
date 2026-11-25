@@ -7,7 +7,9 @@ import { db, schema, type Tx } from './db';
 import { env } from './env';
 import { fail } from './http';
 import { getSite, type Site } from './site';
-import { applyExtra, applyPlan, provision, resetCounters, syncPeerState, type PlanItem } from './vpn';
+import { notifyUser } from './notify';
+import { scheduleVipReload } from './vip';
+import { applyExtra, applyPlan, provision, resetCounters, syncPeerState, trimDevices, type PlanItem } from './vpn';
 import { requestPayment, verifyPayment } from './zarinpal';
 
 export type OrderInput =
@@ -137,17 +139,54 @@ async function fulfil(tx: Tx, order: Order): Promise<Fulfilment> {
     return { order, subId, fresh: false };
   }
   const subId = await applyPlan(tx, order.userId, order.item as unknown as PlanItem);
+  await rewardReferrer(tx, order);
   return { order, subId, fresh: true };
 }
 
+/** The first paid plan of a referred account credits the referrer's wallet with a share of what was paid. */
+async function rewardReferrer(tx: Tx, order: Order) {
+  if (order.amount <= 0) return;
+  const percent = Number((await getSite()).account.referralPercent) || 0;
+  if (percent <= 0) return;
+  const [u] = await tx.update(schema.users).set({ referralRewardedAt: new Date() })
+    .where(and(eq(schema.users.id, order.userId), dsql`${schema.users.referredBy} is not null`, dsql`${schema.users.referralRewardedAt} is null`))
+    .returning({ referredBy: schema.users.referredBy, username: schema.users.username });
+  if (!u?.referredBy) return;
+  const reward = Math.round((order.amount * percent) / 100);
+  if (!reward) return;
+  const [r] = await tx.update(schema.users).set({ wallet: dsql`${schema.users.wallet} + ${reward}` }).where(eq(schema.users.id, u.referredBy)).returning({ wallet: schema.users.wallet });
+  if (!r) return;
+  await tx.insert(schema.walletTx).values({ userId: u.referredBy, orderId: order.id, amount: reward, balance: r.wallet, reason: `پاداش معرفی ${u.username}` });
+  pendingReferral.set(order.id, { to: u.referredBy, reward, from: u.username });
+}
+const pendingReferral = new Map<string, { to: string; reward: number; from: string }>();
+
 async function afterFulfil(f: Fulfilment) {
+  const o = f.order;
+  await notifyUser(o.userId, `paid:${o.id}`, {
+    title: o.type === 'topup' ? 'کیف پولت شارژ شد' : 'پرداخت موفق',
+    body: `${o.title} · ${o.amount.toLocaleString('fa-IR')} تومان · فاکتور INV-${o.number}`,
+    link: { path: '/panel?tab=billing', label: 'فاکتورها' },
+  });
+  const ref = pendingReferral.get(o.id);
+  if (ref) {
+    pendingReferral.delete(o.id);
+    await notifyUser(ref.to, `ref:${o.id}`, { title: 'پاداش معرفی دوستت رسید', body: `${ref.from} اولین خریدش رو انجام داد و ${ref.reward.toLocaleString('fa-IR')} تومان به کیف پولت اضافه شد.` });
+  }
   if (!f.subId) return;
   if (f.fresh) {
+    scheduleVipReload();
+    await trimDevices(f.subId);
     await resetCounters(f.subId);
     await provision(f.subId);
   } else {
     await syncPeerState(f.subId);
   }
+}
+
+/** Auto-renew from the wallet (called by the notification worker). Throws with a Persian message on failure. */
+export async function renewFromWallet(user: { id: string; email: string; username: string }) {
+  return checkout(user, { type: 'renew' }, 'wallet', 'auto-renew', env.appUrl);
 }
 
 /** Bank callback. Safe to call any number of times for the same authority. */

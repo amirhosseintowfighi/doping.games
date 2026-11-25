@@ -17,6 +17,7 @@ const TTL_SEC = 60 * 60 * 24 * 30;
 export type SessionUser = {
   id: string; email: string; username: string; role: Role; wallet: number; steamId: string | null;
   perks: { slot: boolean; tag: boolean; skins: boolean }; csrf: string; tokenHash: string;
+  notify: { email: boolean; telegram: boolean; sms: boolean };
 };
 
 const cookieOpts = (maxAge: number, httpOnly: boolean) => ({
@@ -59,7 +60,7 @@ export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const row = rows[0];
   if (!row || row.u.disabledAt) return null;
   const { u, s } = row;
-  return { id: u.id, email: u.email, username: u.username, role: u.role, wallet: u.wallet, steamId: u.steamId, perks: u.perks, csrf: s.csrf, tokenHash };
+  return { id: u.id, email: u.email, username: u.username, role: u.role, wallet: u.wallet, steamId: u.steamId, perks: u.perks, csrf: s.csrf, tokenHash, notify: u.notify };
 });
 
 const isWrite = (req: Request) => !['GET', 'HEAD', 'OPTIONS'].includes(req.method);

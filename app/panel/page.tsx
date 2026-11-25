@@ -7,9 +7,9 @@ import UserPanel from '@/src/views/UserPanel.jsx';
 export const metadata: Metadata = { title: 'پنل گیمر | دوپینگ', robots: { index: false } };
 export const dynamic = 'force-dynamic';
 
-export default async function Panel({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function Panel({ searchParams }: { searchParams: Promise<{ tab?: string; verified?: string }> }) {
   const user = await currentUser();
   if (!user) redirect('/login?next=/panel');
-  const { tab } = await searchParams;
-  return <UserPanel initial={await panelData(user)} tab={tab} />;
+  const { tab, verified } = await searchParams;
+  return <UserPanel initial={await panelData(user)} tab={tab} verified={verified} />;
 }

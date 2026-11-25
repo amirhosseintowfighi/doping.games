@@ -14,8 +14,8 @@ export const POST = handle(async (req) => {
   const ip = clientIp(req);
   const b = await body(req, Input);
   const id = b.login.toLowerCase();
-  limit(`login:ip:${ip}`, 20, 900);
-  limit(`login:id:${id}`, 8, 900);
+  await limit(`login:ip:${ip}`, 20, 900);
+  await limit(`login:id:${id}`, 8, 900);
   const u = (await db.select().from(schema.users).where(sql`lower(${schema.users.email}) = ${id} or lower(${schema.users.username}) = ${id}`).limit(1))[0];
   const ok = verifyPassword(b.password, u?.passwordHash ?? DUMMY) && !!u;
   if (!ok || u!.disabledAt) {

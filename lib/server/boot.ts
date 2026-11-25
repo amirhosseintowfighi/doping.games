@@ -2,13 +2,17 @@
 import path from 'node:path';
 import { eq, sql as dsql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { newRefCode } from './account';
 import { audit } from './audit';
 import { assertKeyRing, hashPassword } from './crypto';
 import { db, schema } from './db';
 import { env } from './env';
 import { pollServers } from './gameq';
-import { expireStaleOrders } from './orders';
+import { pollTelegram, runNotifyOnce } from './notify';
+import { expireStaleOrders, renewFromWallet } from './orders';
+import { sweepRateLimits } from './rateLimit';
 import { ensureSite } from './site';
+import { purgeTokens } from './tokens';
 import { runQuotaOnce } from './vpn';
 
 const g = globalThis as unknown as { __dopingBoot?: Promise<void> };
@@ -23,7 +27,7 @@ async function seed() {
     const [{ n } = { n: 0 }] = await db.select({ n: dsql<number>`count(*)::int` }).from(schema.users).where(eq(schema.users.role, 'admin'));
     if (!n) {
       if (env.adminPassword.length < 12) throw new Error('ADMIN_PASSWORD must be at least 12 characters');
-      await db.insert(schema.users).values({ email: env.adminEmail, username: env.adminUsername, passwordHash: hashPassword(env.adminPassword), role: 'admin' }).onConflictDoNothing();
+      await db.insert(schema.users).values({ email: env.adminEmail, username: env.adminUsername, passwordHash: hashPassword(env.adminPassword), role: 'admin', refCode: newRefCode(), emailVerifiedAt: new Date() }).onConflictDoNothing();
       await audit('auth', 'warn', `first admin account created from ADMIN_EMAIL (${env.adminUsername})`);
     }
   }
@@ -46,6 +50,9 @@ export function boot() {
       every(env.quotaIntervalSec, 'quota', runQuotaOnce);
       every(env.serverPollSec, 'a2s', pollServers);
       every(600, 'orders', expireStaleOrders);
+      every(env.notifyIntervalSec, 'notify', () => runNotifyOnce(renewFromWallet));
+      every(10, 'telegram', pollTelegram);
+      every(3600, 'sweep', async () => { await sweepRateLimits(); await purgeTokens(); });
     }
     console.log(`[doping] ready · payments: ${env.paymentMode} · workers: ${env.workers ? 'on' : 'off'}`);
   })().catch((err) => {

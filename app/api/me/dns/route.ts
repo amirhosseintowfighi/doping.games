@@ -14,7 +14,7 @@ const Del = z.object({ id: z.string().uuid() });
 /** Without an explicit IP, the address this request came from is registered. */
 export const POST = handle(async (req) => {
   const user = await requireUser(req);
-  limit(`dns:${user.id}`, 20, 3600);
+  await limit(`dns:${user.id}`, 20, 3600);
   const b = await body(req, Add);
   const ip = b.ip ?? clientIp(req);
   if (!publicIp.safeParse(ip).success) fail(422, 'آی‌پی عمومی تو تشخیص داده نشد؛ دستی واردش کن.');

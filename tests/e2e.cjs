@@ -4,12 +4,17 @@
 // wallet → DNS whitelist → tickets → admin (routers, game servers via A2S + RCON, discounts, site settings)
 // and the security checks (CSRF, Origin, roles).
 //
-// Env: BASE_URL (default http://localhost:3000), ADMIN_EMAIL, ADMIN_PASSWORD (same as the app's).
-// Run the app with QUOTA_INTERVAL_SEC and SERVER_POLL_SEC set low (e.g. 5) for the worker checks.
+// Env: BASE_URL (default http://localhost:3000), ADMIN_EMAIL, ADMIN_PASSWORD (same as the app's), and
+// DATABASE_URL (optional; enables the auto-renew check, which moves an expiry date forward in the database).
+// Run the app with QUOTA_INTERVAL_SEC, SERVER_POLL_SEC and NOTIFY_INTERVAL_SEC set low (e.g. 5) for the
+// worker checks, and point its outgoing channels at the mocks this suite starts:
+//   SMTP_URL=smtp://127.0.0.1:2525  KAVENEGAR_API_KEY=test KAVENEGAR_API_BASE=http://127.0.0.1:2526
+//   TELEGRAM_BOT_TOKEN=1:test TELEGRAM_BOT_USERNAME=doping_test_bot TELEGRAM_API_BASE=http://127.0.0.1:2527
 const https = require('node:https');
 const { chromium } = require('playwright');
 const { startRouterOS } = require('./mocks/routeros.cjs');
 const { startGameServer } = require('./mocks/gameserver.cjs');
+const { startKavenegar, startSmtp, startTelegram } = require('./mocks/messaging.cjs');
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const ADMIN = { email: process.env.ADMIN_EMAIL || 'admin@doping.test', password: process.env.ADMIN_PASSWORD || 'admin-pass-12345' };
@@ -17,6 +22,12 @@ const RUN = Date.now().toString(36).slice(-5);
 const USER = { username: `gamer_${RUN}`, email: `gamer_${RUN}@test.ir`, password: 'Gamer-pass-123' };
 const ROUTER_PASS = 'router-api-pass-1234';
 const GB = 1024 ** 3;
+const FRIEND = { username: `friend_${RUN}`, email: `friend_${RUN}@test.ir`, password: 'Friend-pass-123' };
+const PHONE = `0912${String(Date.now()).slice(-7)}`;
+const STEAM = `7656119${String(Date.now()).slice(-10)}`; // unique per run: a SteamID can belong to one account
+const STEAM2 = (() => { const a = BigInt(STEAM) - 76561197960265728n; return `STEAM_1:${a & 1n}:${a >> 1n}`; })();
+const linkIn = (text, path) => (text.match(new RegExp(`https?://[^\\s"<>]+${path}\\?token=[A-Za-z0-9_-]+`)) ?? [])[0]?.replace(/^https?:\/\/[^/]+/, BASE);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake-image-body')]);
 
 let pass = 0;
 let failed = 0;
@@ -75,6 +86,9 @@ function traffic(port, name, up, down) {
 (async () => {
   const ros = await startRouterOS({ pass: ROUTER_PASS });
   const game = await startGameServer();
+  const mailer = await startSmtp(2525);
+  const sms = await startKavenegar(2526);
+  const tg = await startTelegram(2527);
   const browser = await chromium.launch();
   const errors = [];
   const watch = (page) => {
@@ -105,6 +119,12 @@ function traffic(port, name, up, down) {
   check('register signs in and opens the panel', page.url().endsWith('/panel'));
   check('panel shows the empty state before purchase', await page.getByText('هنوز اشتراکی نداری').isVisible());
   const api = client(uctx);
+  const vmail = await until(async () => mailer.mails.find((m) => m.to.includes(USER.email) && linkIn(m.text, '/api/auth/verify-email')), 15_000);
+  check('verification email sent on sign-up', !!vmail);
+  check('panel asks to verify the email', (await api('/api/me')).json.account.emailVerified === false);
+  if (vmail) await page.goto(linkIn(vmail.text, '/api/auth/verify-email'));
+  check('verification link verifies the email', (await api('/api/me')).json.account.emailVerified === true);
+  check('a used verification link does not work twice', !!vmail && (await fetch(linkIn(vmail.text, '/api/auth/verify-email'), { redirect: 'manual' })).headers.get('location')?.includes('verified=0'));
   check('duplicate username refused', (await fetch(`${BASE}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ ...USER, email: `x${USER.email}` }) })).status === 409);
 
   /* ───────── purchase through the gateway (UI) ───────── */
@@ -128,6 +148,20 @@ function traffic(port, name, up, down) {
   await pay(firstAuthority);
   me = (await api('/api/me')).json;
   check('replayed callback grants nothing twice', me.sub.expires === expires && me.invoices.length === 1);
+  check('payment lands in the in-panel notifications', me.notifications.some((n) => n.title === 'پرداخت موفق'));
+  check('payment receipt emailed to the verified address', !!(await until(async () => mailer.mails.some((m) => m.to.includes(USER.email) && m.text.includes('INV-')), 10_000)));
+  check('notifications can be marked read', (await api('/api/me/notifications', { method: 'POST', body: { ids: 'all' } })).status === 200 && (await api('/api/me')).json.notifications.every((n) => n.read));
+
+  /* ───────── Telegram bot ───────── */
+  const tl = await api('/api/me/telegram', { method: 'POST' });
+  const start = tl.json?.url ? new URL(tl.json.url).searchParams.get('start') : '';
+  check('telegram deep link points at the bot', (tl.json?.url ?? '').startsWith('https://t.me/doping_test_bot?start='));
+  tg.say(777001, `/start ${start}`);
+  check('bot /start links the chat to the account', !!(await until(async () => (await api('/api/me')).json.account.telegram, 30_000, 1000)));
+  tg.say(777001, '/status');
+  check('bot /status answers with the subscription', !!(await until(async () => tg.state.sent.some((m) => m.chat === '777001' && m.text.includes(USER.username)), 30_000, 1000)));
+  tg.say(777002, `/start ${start}`);
+  check('a used link cannot link a second chat', !!(await until(async () => tg.state.sent.some((m) => m.chat === '777002' && m.text.includes('منقضی')), 30_000, 1000)));
 
   /* ───────── security ───────── */
   const ticket = { subject: 'xxxxxxx', dept: 'فنی', text: 'xxxxxxxxxxxxx' };
@@ -190,6 +224,7 @@ function traffic(port, name, up, down) {
   me = (await api('/api/me')).json;
   check('usage recorded per day', me.usage.some((d) => d.down >= 15 * GB));
   check('handshake read from the router marks the tunnel online', me.sub.online === true);
+  check('quota alert sent to Telegram', !!(await until(async () => tg.state.sent.some((m) => m.chat === '777001' && m.text.includes('حجم اشتراکت تموم شد')), 30_000, 1000)));
 
   /* ───────── wallet top-up + extra traffic ───────── */
   const top = await api('/api/orders', { method: 'POST', body: { order: { type: 'topup', amount: 100_000 }, gateway: 'zarinpal' } });
@@ -224,6 +259,34 @@ function traffic(port, name, up, down) {
   check('duplicate IP refused', (await api('/api/me/dns', { method: 'POST', body: { ip: '5.160.14.92' } })).status === 409);
   check('private IP refused', (await api('/api/me/dns', { method: 'POST', body: { ip: '10.0.0.5' } })).status === 422);
 
+  /* ───────── extra devices + exit node ───────── */
+  const dev1 = await api('/api/me/devices', { method: 'POST', body: { name: 'PS5 Router' } });
+  check('extra device created', dev1.status === 201);
+  me = (await api('/api/me')).json;
+  const d1ip = me.devices[0]?.ip;
+  check('device gets its own tunnel address', !!d1ip && d1ip !== me.sub.ip);
+  const devPeer = (id) => ros.state.peers.find((p) => p.comment === `doping:${subId}:${id}`);
+  check('device peer provisioned on the router', devPeer(dev1.json.id)?.['allowed-address'] === `${d1ip}/32`);
+  check('one queue counts both configs', ros.state.queues.find((q) => q.name === `dp-${subId}`)?.target === `${me.sub.ip}/32,${d1ip}/32`);
+  const dconf = (await api(`/api/me/config?device=${dev1.json.id}`)).json;
+  check('device config has its own key and address', dconf.address === `${d1ip}/32` && dconf.priv !== (await api('/api/me/config')).json.priv);
+  await page.goto(`${BASE}/panel?tab=connect`);
+  await page.fill('#dev-name', 'Phone');
+  await page.getByRole('button', { name: 'افزودن' }).click();
+  await page.getByText('دستگاه جدید ساخته شد').first().waitFor();
+  check('device added from the panel', (await api('/api/me')).json.devices.length === 2);
+  check('plan device limit enforced (pro: 3)', (await api('/api/me/devices', { method: 'POST', body: { name: 'Laptop' } })).status === 409);
+  await page.getByRole('radio', { name: /دبی/ }).click();
+  await page.getByText('خروجی عوض شد').first().waitFor();
+  const exitList = (name) => ros.state.lists.filter((l) => l.list === name && l.comment === `doping-exit:${subId}`).map((l) => l.address);
+  check('exit switch moves every config to the new exit list', exitList('doping-exit-dxb').length === 3 && exitList('doping-exit-mct').length === 0, JSON.stringify(ros.state.lists.filter((l) => l.list.startsWith('doping-exit'))));
+  const phoneDev = (await api('/api/me')).json.devices.find((x) => x.name === 'Phone');
+  const phonePeerId = devPeer(phoneDev.id)?.['.id'];
+  check('device removed', (await api('/api/me/devices', { method: 'DELETE', body: { id: phoneDev.id } })).status === 200);
+  check('removed device peer deleted from the router', !ros.state.peers.some((p) => p['.id'] === phonePeerId));
+  check('removed device leaves the queue and exit list', !ros.state.queues.find((q) => q.name === `dp-${subId}`).target.includes(phoneDev.ip) && !exitList('doping-exit-dxb').includes(phoneDev.ip));
+  check('invalid exit refused', (await api('/api/me/exit', { method: 'PUT', body: { exit: 'mars' } })).status === 422);
+
   /* ───────── tickets ───────── */
   await page.goto(`${BASE}/panel?tab=support`);
   await page.getByRole('button', { name: 'تیکت جدید' }).click();
@@ -232,6 +295,16 @@ function traffic(port, name, up, down) {
   await page.getByRole('button', { name: 'ثبت تیکت' }).click();
   await page.getByText(`پینگ بالا روی Valorant ${RUN}`).first().waitFor();
   check('ticket created from the panel', true);
+  const tk = (await api('/api/me')).json.tickets[0];
+  const att = await api(`/api/me/tickets/${tk.id}`, { method: 'POST', body: { text: 'اسکرین‌شات', files: [{ name: 'ping.png', data: PNG.toString('base64') }] } });
+  check('ticket reply with an attachment', att.status === 200);
+  const file = (await api('/api/me')).json.tickets[0].msgs.flatMap((m) => m.files).find((f) => f.name === 'ping.png');
+  check('attachment type detected from its bytes', file?.mime === 'image/png' && file.size === PNG.length);
+  const cookies = (await uctx.cookies(BASE)).map((c) => `${c.name}=${c.value}`).join('; ');
+  const dl = await fetch(`${BASE}/api/attachments/${file?.id}`, { headers: { Cookie: cookies } });
+  check('owner downloads the attachment as a file', dl.status === 200 && (dl.headers.get('content-disposition') ?? '').startsWith('attachment') && Buffer.from(await dl.arrayBuffer()).equals(PNG));
+  check('anonymous cannot download attachments', (await fetch(`${BASE}/api/attachments/${file?.id}`)).status === 401);
+  check('executables refused as attachments', (await api(`/api/me/tickets/${tk.id}`, { method: 'POST', body: { text: 'x', files: [{ name: 'a.exe', data: Buffer.from([0x4d, 0x5a, 0x00, 0x01, 0xff]).toString('base64') }] } })).status === 415);
   await rail(admin, 'تیکت‌های پشتیبانی');
   await admin.getByText(`پینگ بالا روی Valorant ${RUN}`).first().click();
   await admin.fill('#adm-reply', 'خروجی دبی رو امتحان کن؛ مسیر عمان امشب شلوغه.');
@@ -239,6 +312,8 @@ function traffic(port, name, up, down) {
   await admin.getByText('پاسخ ارسال شد.').waitFor();
   const t = (await api('/api/me')).json.tickets[0];
   check('staff reply reaches the user and marks the ticket answered', t.status === 'answered' && t.msgs.some((m) => m.from === 'staff'));
+  check('staff sees the user attachment', (await aapi('/api/admin/tickets')).json.find((x) => x.id === t.id)?.msgs.some((m) => m.files?.length));
+  check('ticket answer notified on Telegram', !!(await until(async () => tg.state.sent.some((m) => m.chat === '777001' && m.text.includes(`T-${t.id}`)), 15_000)));
 
   /* ───────── game servers: A2S + RCON ───────── */
   await rail(admin, 'سرورهای بازی و RCON');
@@ -267,6 +342,20 @@ function traffic(port, name, up, down) {
   check('commands outside the allow-list are blocked', !!(await until(async () => (await admin.getByText(/فهرست مجاز نیست/).count()) > 0, 5_000)) && !game.state.commands.includes('rcon_password hacked'));
   await admin.keyboard.press('Escape');
 
+  /* ───────── Steam VIP list ───────── */
+  check('steam linked', (await api('/api/me/steam', { method: 'PUT', body: { steamId: STEAM } })).status === 200);
+  const gs = (await aapi('/api/admin/overview')).json.servers.find((x) => x.port === game.port);
+  const vt = await aapi(`/api/admin/servers/${gs.id}/vip-token`, { method: 'POST' });
+  check('VIP token issued with a cron line', vt.status === 200 && vt.json.cron.includes(vt.json.token));
+  const vipRes = await fetch(`${BASE}/api/servers/vip`, { headers: { Authorization: `Bearer ${vt.json.token}` } });
+  const ini = await vipRes.text();
+  check('VIP list in admins_simple.ini format with the perk flags', vipRes.status === 200 && ini.includes(`"${STEAM2}" "ao"`), ini);
+  check('VIP list refused with a wrong token', (await fetch(`${BASE}/api/servers/vip`, { headers: { Authorization: 'Bearer wrong-token-wrong-token-1234' } })).status === 401);
+  await api('/api/me/perks', { method: 'PUT', body: { slot: true, tag: false, skins: true } });
+  const vj = await (await fetch(`${BASE}/api/servers/vip?format=json`, { headers: { Authorization: `Bearer ${vt.json.token}` } })).json();
+  check('perk changes show up in the VIP list', vj.players.some((x) => x.steam2 === STEAM2 && x.flags === 'ap'));
+  check('server records when it pulled the list', !!(await aapi('/api/admin/overview')).json.servers.find((x) => x.id === gs.id)?.vipFetchedAt);
+
   /* ───────── discounts ───────── */
   const code = `E2E${RUN}`.toUpperCase().slice(0, 16);
   check('discount created', (await aapi('/api/admin/discounts', { method: 'POST', body: { code, percent: 20, max: 1 } })).status === 201);
@@ -274,6 +363,7 @@ function traffic(port, name, up, down) {
   check('discount applied in the server quote', q1.json?.discount > 0 && q1.json.total === q1.json.subtotal - q1.json.discount);
   const d1 = await api('/api/orders', { method: 'POST', body: { order: { type: 'plan', kind: 'ping', tier: 15, months: 1, code }, gateway: 'zarinpal' } });
   await pay(authorityOf(d1));
+  check('switching to a plan with fewer devices trims the extras', (await api('/api/me')).json.devices.length <= 1);
   check('single-use discount exhausted after payment', (await api('/api/orders/quote', { method: 'POST', body: { type: 'plan', kind: 'ping', tier: 15, months: 1, code } })).status === 422);
 
   /* ───────── site settings ───────── */
@@ -290,10 +380,116 @@ function traffic(port, name, up, down) {
   const uid = (await aapi('/api/admin/users')).json.find((u) => u.username === USER.username).id;
   await aapi(`/api/admin/users/${uid}`, { method: 'POST', body: { action: 'peer', on: false } });
   check('admin disables the peer on the router', peer()?.disabled === 'true');
+  check('device peers follow the subscription state', ros.state.peers.filter((p) => p.comment?.startsWith(`doping:${subId}:`)).every((p) => p.disabled === 'true'));
   await aapi(`/api/admin/users/${uid}`, { method: 'POST', body: { action: 'peer', on: true } });
   check('admin re-enables the peer', peer()?.disabled === 'false');
   const logs = (await aapi('/api/admin/logs?type=payment')).json;
   check('payments written to the audit log', logs.some((l) => l.msg.includes('verify OK')));
+
+  /* ───────── sales report + broadcast ───────── */
+  const sales = (await aapi('/api/admin/sales')).json;
+  check('sales report has daily totals and a mix by type', sales.daily.length >= 1 && sales.daily.at(-1).sales > 0 && sales.byType.some((x) => x.type === 'topup'));
+  const csv = await fetch(`${BASE}/api/admin/sales/export?days=30`, { headers: { Cookie: (await actx.cookies(BASE)).map((c) => `${c.name}=${c.value}`).join('; ') } });
+  const csvText = await csv.text();
+  check('sales CSV export', csv.headers.get('content-type')?.startsWith('text/csv') && csvText.includes(USER.username) && csvText.includes('INV-'));
+  check('users cannot export sales', (await api('/api/admin/sales/export')).status === 403);
+  const bc = await aapi('/api/admin/notify', { method: 'POST', body: { title: `قطعی ${RUN}`, body: 'نود مسقط ساعت ۳ بامداد ۱۰ دقیقه قطع می‌شه.', target: 'all', push: false } });
+  check('broadcast reaches user panels', bc.json?.sent >= 1 && (await api('/api/me')).json.notifications.some((n) => n.title === `قطعی ${RUN}`));
+
+  /* ───────── referral ───────── */
+  me = (await api('/api/me')).json;
+  const walletBefore = me.user.wallet;
+  const fctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const fpage = await fctx.newPage();
+  watch(fpage);
+  await fpage.goto(`${BASE}/register?ref=${me.account.refCode}`);
+  check('referral code shown on sign-up', await fpage.getByText(me.account.refCode).first().isVisible());
+  await fpage.fill('#auth-email', FRIEND.email);
+  await fpage.fill('#auth-username', FRIEND.username);
+  await fpage.fill('#auth-password', FRIEND.password);
+  await fpage.click('button[type=submit]');
+  await fpage.waitForURL('**/panel');
+  const fapi = client(fctx);
+  const fbuy = await fapi('/api/orders', { method: 'POST', body: { order: { type: 'plan', kind: 'ping', tier: 15, months: 1 }, gateway: 'zarinpal' } });
+  await pay(authorityOf(fbuy));
+  me = (await api('/api/me')).json;
+  check('referrer credited 10% of the first purchase', me.user.wallet === walletBefore + 6_900, `${walletBefore} → ${me.user.wallet}`);
+  check('referral stats in the panel', me.account.referrals.signups >= 1 && me.account.referrals.bought >= 1 && me.account.referrals.earned >= 6_900);
+  const fbuy2 = await fapi('/api/orders', { method: 'POST', body: { order: { type: 'renew' }, gateway: 'zarinpal' } });
+  await pay(authorityOf(fbuy2));
+  check('only the first purchase is rewarded', (await api('/api/me')).json.user.wallet === walletBefore + 6_900);
+  check('another account cannot read your attachments', (await fapi(`/api/attachments/${file?.id}`)).status === 404);
+
+  /* ───────── phone + SMS login ───────── */
+  check('phone code sent', (await fapi('/api/me/phone', { method: 'POST', body: { phone: PHONE.replace(/^0/, '+98') } })).status === 200);
+  const smsCode = (x) => x?.token || (x?.text.match(/\b\d{6}\b/) ?? [])[0];
+  const code1 = smsCode(await until(async () => sms.sms.find((x) => x.to === PHONE), 10_000));
+  check('wrong phone code refused', (await fapi('/api/me/phone', { method: 'PUT', body: { phone: PHONE, code: code1 === '000000' ? '111111' : '000000' } })).status === 422);
+  check('phone verified with the SMS code', (await fapi('/api/me/phone', { method: 'PUT', body: { phone: PHONE, code: code1 } })).status === 200 && (await fapi('/api/me')).json.account.phoneVerified);
+  check('same number cannot be claimed twice', (await api('/api/me/phone', { method: 'POST', body: { phone: PHONE } })).status === 409);
+  const octx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const opage = await octx.newPage();
+  watch(opage);
+  await opage.goto(`${BASE}/login`);
+  await opage.getByRole('tab', { name: 'کد پیامکی' }).click();
+  await opage.fill('#auth-phone', PHONE);
+  const smsBefore = sms.sms.length;
+  await opage.getByRole('button', { name: 'ارسال کد ورود' }).click();
+  const code2 = smsCode(await until(async () => sms.sms.slice(smsBefore).find((x) => x.to === PHONE), 10_000));
+  await opage.fill('#auth-otp', code2 ?? '');
+  await opage.getByRole('button', { name: 'ورود' }).last().click();
+  await opage.waitForURL('**/panel', { timeout: 10_000 }).catch(() => {});
+  check('SMS code signs in', opage.url().endsWith('/panel') && (await client(octx)('/api/me')).json?.user?.username === FRIEND.username);
+  check('a used login code does not work again', (await fetch(`${BASE}/api/auth/otp/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ phone: PHONE, code: code2 }) })).status === 401);
+  const unknown = await fetch(`${BASE}/api/auth/otp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ phone: '09129999999' }) });
+  check('unknown numbers get the same answer and no SMS', unknown.status === 200 && !sms.sms.some((x) => x.to === '09129999999'));
+
+  /* ───────── password reset ───────── */
+  await opage.goto(`${BASE}/forgot`);
+  await opage.fill('#forgot-login', FRIEND.username);
+  const mailsBefore = mailer.mails.length;
+  await opage.getByRole('button', { name: 'ارسال لینک بازیابی' }).click();
+  await opage.getByText(/لینک بازیابی تا چند دقیقه/).waitFor();
+  const rmail = await until(async () => mailer.mails.slice(mailsBefore).find((m) => m.to.includes(FRIEND.email) && linkIn(m.text, '/reset')), 10_000);
+  check('reset link emailed', !!rmail);
+  await opage.goto(linkIn(rmail?.text ?? '', '/reset') ?? `${BASE}/reset`);
+  await opage.fill('#reset-pass', 'Brand-new-pass-9');
+  await opage.fill('#reset-again', 'Brand-new-pass-9');
+  await opage.getByRole('button', { name: 'ذخیره رمز جدید' }).click();
+  await opage.getByText('رمزت عوض شد.').waitFor();
+  check('reset signs every device out', (await fapi('/api/me')).status === 401);
+  check('reset link works only once', (await fetch(`${BASE}/api/auth/reset`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ token: new URL(linkIn(rmail.text, '/reset')).searchParams.get('token'), password: 'Another-pass-99' }) })).status === 410);
+  await login(opage, FRIEND.username, 'Brand-new-pass-9');
+  check('new password works', opage.url().endsWith('/panel'));
+  const forgotOther = await fetch(`${BASE}/api/auth/forgot`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: BASE }, body: JSON.stringify({ login: `nobody_${RUN}` }) });
+  check('forgot answers the same for unknown accounts', forgotOther.status === 200);
+
+  /* ───────── account: password change + sessions ───────── */
+  const oapi = client(octx);
+  check('password change needs the current password', (await oapi('/api/me/password', { method: 'PUT', body: { current: 'wrong', next: 'Third-pass-123' } })).status === 422);
+  check('password changed', (await oapi('/api/me/password', { method: 'PUT', body: { current: 'Brand-new-pass-9', next: 'Third-pass-123' } })).status === 200);
+  check('current session survives a password change', (await oapi('/api/me')).status === 200);
+  await fctx.close();
+  await octx.close();
+
+  /* ───────── auto-renew ───────── */
+  if (process.env.DATABASE_URL) {
+    const postgres = require('postgres');
+    const db = postgres(process.env.DATABASE_URL);
+    me = (await api('/api/me')).json;
+    const w0 = me.user.wallet;
+    check('auto-renew turned on', (await api('/api/me/autorenew', { method: 'PUT', body: { on: true } })).status === 200);
+    await db`update subscriptions set expires_at = now() + interval '6 hours' where id = ${subId}`;
+    const renewed = await until(async () => { const x = (await api('/api/me')).json; return x.sub.expires > Date.now() + 29 * 86_400_000 ? x : null; }, 40_000, 1000);
+    check('auto-renew extends the plan from the wallet in its last day', !!renewed && renewed.user.wallet < w0, renewed ? `${w0} → ${renewed.user.wallet}` : 'not renewed');
+    check('auto-renew notification', !!renewed?.notifications.some((n) => n.title.includes('خودکار تمدید')));
+    await db.end();
+  }
+
+  /* ───────── outbox ───────── */
+  const outbox = (await aapi('/api/admin/outbox')).json;
+  check('outbox lists sent messages and channel status', outbox.channels.email && outbox.channels.sms && outbox.channels.telegram && outbox.rows.some((r) => r.status === 'sent'));
+  check('codes are redacted in the outbox', !outbox.rows.some((r) => r.channel === 'sms' && r.body.includes(code1)) || outbox.devOutbox);
 
   /* ───────── logout ───────── */
   await page.goto(BASE);
@@ -313,6 +509,9 @@ function traffic(port, name, up, down) {
   await browser.close();
   ros.close();
   game.close();
+  mailer.close();
+  sms.close();
+  tg.close();
   console.log(`\n${pass} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })().catch((err) => {

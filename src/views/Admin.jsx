@@ -1,14 +1,16 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Crown, Download, Inbox, Megaphone, ChartColumn,
   Activity, BadgePercent, Ban, Banknote, Code2, CreditCard, Crosshair, LifeBuoy, Pause, Pencil, Play, Plus, Power,
   RefreshCw, RotateCcw, Router, ScrollText, Search, SlidersHorizontal, Send, ShieldAlert, Terminal, Trash2, UserX, Users,
 } from 'lucide-react';
 import { useResource, useStore } from '../store.jsx';
 import Settings from './Settings.jsx';
+import { Attachments, Bars, FilePicker } from './parts.jsx';
 import { ArcMeter, ModeEmblem, RouteMap } from '../art.jsx';
-import { Badge, Btn, Card, cx, Dot, Drawer, Field, Modal, Mono, Progress, RailLayout, Stat, Toggle } from '../ui.jsx';
-import { clock, CS2_MAPS, daysLeft, dnsSlots, durations, fa, faDate, GB, gb, isIPv4, MODES, pingTiers, priceOf, tierLabel, toman } from '../data.js';
+import { Badge, Btn, Card, CopyBtn, cx, Dot, Drawer, Field, Modal, Mono, Progress, RailLayout, Stat, Toggle } from '../ui.jsx';
+import { clock, CS2_MAPS, daysLeft, dnsSlots, durations, EXITS, fa, faDate, GB, gb, isIPv4, MODES, pingTiers, priceOf, tierLabel, toman } from '../data.js';
 
 /** Overview (routers, game servers, counters) shared by the tabs; `reload()` after a write. */
 const AdminCtx = createContext(null);
@@ -308,7 +310,7 @@ function UsersTable({ role }) {
                         <span className={cx('size-2 shrink-0 rounded-full', sub?.online ? 'bg-ok' : 'bg-zinc-600')} title={sub?.online ? 'آنلاین' : 'آفلاین'} />
                         <div className="min-w-0">
                           <Mono className="block font-bold">{u.username}{u.role !== 'user' && <span className="ms-1.5 text-[11px] text-warn">{u.role}</span>}</Mono>
-                          <span className="text-[11px] text-zinc-500">{sub ? s.site.planNames[sub.kind] : u.email}{u.disabled && ' · حساب غیرفعال'}</span>
+                          <span className="text-[11px] text-zinc-500">{sub ? s.site.planNames[sub.kind] : u.email}{sub?.kind !== 'dns' && sub?.exit && <> · <Mono>{sub.exit.toUpperCase()}</Mono></>}{sub?.devices > 0 && ` · ${fa(sub.devices + 1)} دستگاه`}{u.disabled && ' · حساب غیرفعال'}</span>
                         </div>
                       </div>
                     </td>
@@ -357,6 +359,21 @@ function UserManage({ u, onClose, run }) {
   return (
     <Modal open onClose={onClose} title={`مدیریت ${u.username}`} icon={SlidersHorizontal}>
       <div className="space-y-5">
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line text-xs">
+          {[
+            ['ایمیل', <><Mono>{u.email}</Mono> {u.emailVerified ? <span className="text-ok">✓</span> : <span className="text-warn">تایید نشده</span>}</>],
+            ['موبایل', u.phone ? <Mono>{u.phone}</Mono> : '—'],
+            ['تلگرام', u.telegram ? 'وصل' : '—'],
+            ['معرفی‌ها', fa(u.referrals)],
+            ['آخرین ورود', u.lastLogin ? faDate(u.lastLogin) : '—'],
+            ['عضویت', faDate(u.createdAt)],
+            ...(u.sub ? [['خروجی', <Mono key="x">{(EXITS.find((x) => x.id === u.sub.exit)?.name) ?? u.sub.exit}</Mono>], ['دستگاه‌ها / تمدید خودکار', `${fa(u.sub.devices + (u.sub.ip ? 1 : 0))} · ${u.sub.autoRenew ? 'روشن' : 'خاموش'}`]] : []),
+          ].map(([k, v]) => <div key={k} className="bg-card px-3 py-2"><dt className="text-zinc-500">{k}</dt><dd className="mt-0.5 truncate">{v}</dd></div>)}
+        </dl>
+        <div className="flex flex-wrap gap-2">
+          {!u.emailVerified && <Btn size="sm" variant="ghost" onClick={() => run({ action: 'verify' }, 'ایمیل تایید‌شده علامت خورد.')}>تایید دستی ایمیل</Btn>}
+          <Btn size="sm" variant="ghost" onClick={() => run({ action: 'logout' }, 'همه نشست‌های کاربر بسته شد.')}>خروج از همه دستگاه‌ها</Btn>
+        </div>
         <div className="flex items-end gap-2">
           <Field label={`اصلاح کیف پول (موجودی ${toman(u.wallet)})`} hint="عدد منفی برای کسر." className="flex-1">
             <input id="um-wallet" dir="ltr" value={amount} onChange={(e) => setAmount(Number(e.target.value.replace(/[^\d-]/g, '')) || 0)} className="field mono" />
@@ -520,11 +537,47 @@ function ServerForm({ initial, onClose }) {
   );
 }
 
+/** Issues the token a game server uses to pull its VIP list (admins_simple.ini) and shows the cron line. */
+function VipSetup({ server, onClose }) {
+  const act = useAct();
+  const [r, setR] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const issue = async () => {
+    setBusy(true);
+    const res = await act(`/api/admin/servers/${server.id}/vip-token`, 'POST', undefined, server.hasVip ? 'توکن جدید ساخته شد؛ توکن قبلی دیگه کار نمی‌کنه.' : 'توکن ساخته شد.');
+    setBusy(false);
+    if (res) setR(res);
+  };
+  return (
+    <Modal open onClose={onClose} wide title={`لیست VIP · ${server.name}`}>
+      <div className="space-y-4 text-sm leading-7 text-silver">
+        <p>بازیکن‌های <b className="text-white">پکیج پرو</b> که Steam وصل کردن، با امتیازهایی که روشن کردن توی <Mono>admins_simple.ini</Mono> سورس‌مود قرار می‌گیرن: اسلات رزرو <Mono>a</Mono>، تگ VIP <Mono>o</Mono>، اسکین <Mono>p</Mono>.</p>
+        <p>سرور هر دقیقه لیست رو از پنل می‌گیره؛ بعد از هر تغییر، پنل حدود یک دقیقه بعد با RCON دستور <Mono>sm_reloadadmins</Mono> رو می‌فرسته (اگه رمز RCON ثبت شده باشه).</p>
+        <div className="well px-4 py-3 text-xs">
+          وضعیت: {server.hasVip ? <>توکن ساخته شده · آخرین دریافت لیست: <Mono className="text-white">{server.vipFetchedAt ? `${faDate(server.vipFetchedAt)} ${clock(server.vipFetchedAt)}` : 'هنوز نه'}</Mono></> : 'هنوز راه‌اندازی نشده'}
+        </div>
+        {r ? (
+          <div className="space-y-3">
+            <Field label="توکن (فقط همین یک بار نمایش داده می‌شه)"><div className="flex items-center gap-2 well py-1 ps-3 pe-1"><Mono className="min-w-0 flex-1 truncate text-xs text-white">{r.token}</Mono><CopyBtn text={r.token} /></div></Field>
+            <Field label="خط crontab روی سرور بازی (مسیر سورس‌مود رو با نصب خودت تطبیق بده)">
+              <pre dir="ltr" className="mono max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ink p-3 text-left text-[11px] leading-5 text-zinc-300">{r.cron}</pre>
+            </Field>
+            <CopyBtn text={r.cron} label="کپی خط cron" />
+          </div>
+        ) : (
+          <Btn icon={Crown} busy={busy} onClick={issue}>{server.hasVip ? 'ساختن توکن جدید' : 'ساختن توکن و دستور نصب'}</Btn>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function GameServers() {
   const { o, reload } = useAdmin();
   const act = useAct();
   const [form, setForm] = useState(null);
   const [rcon, setRcon] = useState(null);
+  const [vip, setVip] = useState(null);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -549,6 +602,7 @@ function GameServers() {
                   <td data-label="عملیات" className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
                       <Btn size="sm" icon={Terminal} onClick={() => setRcon(v.id)}>RCON</Btn>
+                      <Btn size="sm" variant="ghost" icon={Crown} onClick={() => setVip(v)} title={v.hasVip ? `لیست VIP · آخرین دریافت ${v.vipFetchedAt ? faDate(v.vipFetchedAt) + ' ' + clock(v.vipFetchedAt) : 'هنوز نه'}` : 'راه‌اندازی لیست VIP'} aria-label="لیست VIP">{v.hasVip ? <span className={cx('size-1.5 rounded-full', v.vipFetchedAt && Date.now() - v.vipFetchedAt < 600_000 ? 'bg-ok' : 'bg-warn')} /> : null}</Btn>
                       <Btn size="sm" variant="ghost" icon={Pencil} aria-label="ویرایش" onClick={() => setForm(v)} />
                       <Btn
                         size="sm" variant="ghost" icon={v.enabled ? Ban : Play} aria-label={v.enabled ? 'پنهان کردن از سایت' : 'نمایش در سایت'} title={v.enabled ? 'پنهان کردن از سایت و توقف کوئری' : 'نمایش در سایت'}
@@ -566,6 +620,7 @@ function GameServers() {
       </Card>
       {form && <ServerForm initial={form} onClose={() => setForm(null)} />}
       {rcon && o.servers.some((x) => x.id === rcon) && <Rcon id={rcon} onClose={() => setRcon(null)} />}
+      {vip && <VipSetup server={vip} onClose={() => { setVip(null); reload(); }} />}
     </div>
   );
 }
@@ -578,6 +633,53 @@ function NumInput({ id, value, onChange, suffix }) {
       <input id={id} dir="ltr" inputMode="numeric" value={value} onChange={(e) => onChange(Number(e.target.value.replace(/\D/g, '')) || 0)} className="field mono pe-12 text-left" />
       {suffix && <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-zinc-500">{suffix}</span>}
     </div>
+  );
+}
+
+const O_TYPE = { plan: 'خرید پلن', renew: 'تمدید', extra: 'حجم اضافه', topup: 'شارژ کیف پول' };
+
+/** Paid sales per day for 30 days (Tehran days), the mix by order type and a CSV export. */
+function Revenue({ d }) {
+  const days = useMemo(() => {
+    const by = new Map(d.daily.map((x) => [x.day, x]));
+    const key = (t) => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Tehran' });
+    return Array.from({ length: 30 }, (_, i) => {
+      const at = Date.now() - (29 - i) * 86_400_000;
+      const x = by.get(key(at));
+      return { key: key(at), at, sales: x?.sales ?? 0, topups: x?.topups ?? 0, n: x?.n ?? 0 };
+    });
+  }, [d.daily]);
+  const [pick, setPick] = useState(null);
+  const sel = days.find((x) => x.key === pick) ?? days.at(-1);
+  const total = days.reduce((a, x) => a + x.sales, 0);
+  return (
+    <Card className="min-w-0 p-5 lg:col-span-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><ChartColumn className="size-4 text-brand2" /> فروش ۳۰ روز اخیر</h3>
+          <p className="mt-1 text-xs text-silver">جمع <b className="text-white">{toman(total)}</b> · میانگین روزانه {toman(Math.round(total / 30))} · شارژ کیف پول جدا حساب شده</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[30, 90, 365].map((n) => (
+            <a key={n} href={`/api/admin/sales/export?days=${n}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs text-silver hover:bg-white/[0.05] hover:text-white"><Download className="size-3.5" /> CSV {fa(n)} روز</a>
+          ))}
+        </div>
+      </div>
+      <div className="mt-5"><Bars rows={days.map((x) => ({ key: x.key, value: x.sales, title: `${faDate(x.at)}: ${toman(x.sales)}` }))} picked={sel.key} onPick={setPick} /></div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl bg-ink px-4 py-3 text-sm" aria-live="polite">
+        <span className="font-bold">{faDate(sel.at)}</span>
+        <span className="text-zinc-400">فروش <b className="text-white">{toman(sel.sales)}</b></span>
+        <span className="text-zinc-400">شارژ <b className="text-white">{toman(sel.topups)}</b></span>
+        <span className="text-zinc-400">{fa(sel.n)} پرداخت</span>
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line text-sm sm:grid-cols-5">
+        {['plan', 'renew', 'extra', 'topup'].map((t) => {
+          const x = d.byType.find((y) => y.type === t);
+          return <div key={t} className="bg-card px-4 py-3"><dt className="text-xs text-zinc-500">{O_TYPE[t]} · {fa(x?.n ?? 0)}</dt><dd className="mt-0.5 font-bold">{toman(x?.sum ?? 0)}</dd></div>;
+        })}
+        <div className="bg-card px-4 py-3"><dt className="text-xs text-zinc-500">معرفی (ثبت‌نام / خرید)</dt><dd className="mt-0.5 font-bold"><Mono>{fa(d.referrals.signups)} / {fa(d.referrals.converted)}</Mono></dd></div>
+      </dl>
+    </Card>
   );
 }
 
@@ -602,6 +704,7 @@ function Sales({ open }) {
   const O_STATUS = { paid: ['پرداخت شده', 'ok'], pending: ['در انتظار', 'warn'], failed: ['ناموفق', 'bad'], canceled: ['لغو', 'mute'] };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {d && <Revenue d={d} />}
       <Card className="p-5 lg:col-span-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -717,11 +820,13 @@ function Tickets() {
   const tickets = useResource('/api/admin/tickets', { interval: 30_000 });
   const [sel, setSel] = useState(null);
   const [reply, setReply] = useState('');
+  const [files, setFiles] = useState([]);
+  const { toast } = useStore();
   const [filter, setFilter] = useState('open');
   const all = tickets.data ?? [];
   const list = all.filter((t) => filter === 'all' || t.status === filter);
   const t = all.find((x) => x.id === sel) ?? list[0];
-  const send = async (body, ok) => { if (await act(`/api/admin/tickets/${t.id}`, 'POST', body, ok)) { setReply(''); tickets.reload(); } };
+  const send = async (body, ok) => { if (await act(`/api/admin/tickets/${t.id}`, 'POST', body, ok)) { setReply(''); setFiles([]); tickets.reload(); } };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
       <Card className="p-5">
@@ -756,13 +861,17 @@ function Tickets() {
               {t.msgs.map((m) => (
                 <div key={m.id} className={cx('max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-7', m.from === 'staff' ? 'bg-brand/20' : 'ms-auto border border-white/8 bg-white/[0.04]')}>
                   <div className="mb-0.5 text-[11px] font-bold text-silver">{m.from === 'staff' ? 'پشتیبانی' : t.username} · {clock(m.at)}</div>
-                  <span className="whitespace-pre-wrap">{m.text}</span>
+                  {m.text && <span className="whitespace-pre-wrap">{m.text}</span>}
+                  <Attachments files={m.files} />
                 </div>
               ))}
             </div>
-            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (reply.trim()) send({ text: reply.trim() }, 'پاسخ ارسال شد.'); }}>
-              <input id="adm-reply" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="پاسخ پشتیبانی…" className="field" />
-              <Btn type="submit" icon={Send} disabled={!reply.trim()}>ارسال</Btn>
+            <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (reply.trim() || files.length) send({ text: reply.trim(), files: files.map(({ name, data }) => ({ name, data })) }, 'پاسخ ارسال شد.'); }}>
+              <div className="flex gap-2">
+                <input id="adm-reply" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="پاسخ پشتیبانی…" className="field" />
+                <Btn type="submit" icon={Send} disabled={!reply.trim() && !files.length}>ارسال</Btn>
+              </div>
+              <FilePicker id="adm-files" files={files} onChange={setFiles} onError={(m) => toast(m, 'warn')} />
             </form>
           </>
         ) : <div className="m-auto text-center text-sm text-silver">تیکتی انتخاب نشده.</div>}
@@ -827,6 +936,88 @@ function Logs() {
   );
 }
 
+/* ───────────────────────── Messages: broadcast + outbox ───────────────────────── */
+
+const CH = { email: 'ایمیل', sms: 'پیامک', telegram: 'تلگرام' };
+const OUT_TONE = { sent: 'ok', failed: 'bad', skipped: 'mute' };
+
+function Messages() {
+  const act = useAct();
+  const [channel, setChannel] = useState('all');
+  const out = useResource(`/api/admin/outbox?channel=${channel}`, { interval: 15_000 });
+  const [f, setF] = useState({ title: '', body: '', target: 'active', push: false });
+  const [busy, setBusy] = useState(false);
+  const d = out.data;
+  const { toast } = useStore();
+  const send = async () => {
+    setBusy(true);
+    const r = await act('/api/admin/notify', 'POST', f);
+    setBusy(false);
+    if (!r) return;
+    setF({ title: '', body: '', target: f.target, push: false });
+    out.reload();
+    toast(`اعلان برای ${fa(r.sent)} کاربر ثبت شد.`);
+  };
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+      <div className="flex min-w-0 flex-col gap-4">
+        <Card className="p-5">
+          <h3 className="flex items-center gap-2.5 text-[15px] font-black"><Megaphone className="size-4 text-brand2" /> اعلان همگانی</h3>
+          <p className="mt-1 text-xs leading-6 text-silver">توی پنل همه کاربرها (یا فقط اشتراک‌های فعال) نمایش داده می‌شه. با «ارسال روی کانال‌ها» برای کسایی که ایمیل/تلگرام/پیامک رو روشن کردن هم فرستاده می‌شه.</p>
+          <div className="mt-4 space-y-3">
+            <Field label="عنوان"><input id="bc-title" value={f.title} maxLength={80} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="قطعی برنامه‌ریزی‌شده نود مسقط" className="field" /></Field>
+            <Field label="متن"><textarea id="bc-body" rows={3} maxLength={600} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} className="field resize-none" /></Field>
+            <div className="flex flex-wrap items-center gap-3">
+              <select id="bc-target" value={f.target} onChange={(e) => setF({ ...f, target: e.target.value })} className="field w-auto">
+                <option value="active">اشتراک‌های فعال</option><option value="all">همه کاربرها</option>
+              </select>
+              <label className="flex items-center gap-2 text-xs text-silver">ارسال روی کانال‌ها <Toggle label="ارسال روی کانال‌ها" checked={f.push} onChange={(v) => setF({ ...f, push: v })} /></label>
+            </div>
+            <Btn icon={Megaphone} busy={busy} disabled={f.title.trim().length < 3 || f.body.trim().length < 5} onClick={send}>ارسال اعلان</Btn>
+          </div>
+        </Card>
+        <Card className="p-5">
+          <h3 className="font-black">کانال‌ها</h3>
+          <ul className="mt-3 space-y-2 text-sm">
+            {[['email', 'SMTP_URL'], ['sms', 'KAVENEGAR_API_KEY'], ['telegram', 'TELEGRAM_BOT_TOKEN + TELEGRAM_BOT_USERNAME']].map(([k, envName]) => (
+              <li key={k} className="flex items-center justify-between gap-3 well px-4 py-2.5">
+                <span className="font-bold">{CH[k]}</span>
+                {d ? (d.channels[k] ? <Badge tone="ok">فعال</Badge> : <span className="text-[11px] text-zinc-500">تنظیم نشده · <Mono>{envName}</Mono></span>) : '…'}
+              </li>
+            ))}
+          </ul>
+          {d?.devOutbox && <p className="mt-3 text-[11px] text-warn"><Mono>DEV_OUTBOX</Mono> روشنه: متن کامل پیام‌ها (شامل کدها) ذخیره می‌شه. فقط برای تست.</p>}
+        </Card>
+      </div>
+      <Card className="min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 px-4 py-3">
+          <h3 className="flex items-center gap-2 font-black"><Inbox className="size-4 text-brand2" /> پیام‌های خروجی</h3>
+          <div className="flex gap-1">
+            {[['all', 'همه'], ['email', 'ایمیل'], ['sms', 'پیامک'], ['telegram', 'تلگرام']].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setChannel(id)} aria-pressed={channel === id} className={cx('rounded-lg px-3 py-1.5 text-xs', channel === id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white')}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <ul className="max-h-[640px] divide-y divide-white/5 overflow-auto">
+          {(d?.rows ?? []).map((m) => (
+            <li key={m.id} className="px-4 py-3 text-xs" data-outbox={m.channel}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={OUT_TONE[m.status]}>{m.status}</Badge>
+                <span className="font-bold">{CH[m.channel]}</span>
+                <Mono className="text-silver">{m.to}</Mono>
+                <span className="ms-auto text-zinc-500">{faDate(m.at)} <Mono>{clock(m.at)}</Mono></span>
+              </div>
+              <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-zinc-300" dir="auto">{m.subject !== m.channel && m.subject !== 'otp' ? <b>{m.subject} · </b> : null}{m.body}</p>
+              {m.error && <p className="mt-1 text-[11px] text-red-300" dir="ltr">{m.error}</p>}
+            </li>
+          ))}
+          {d && !d.rows.length && <li className="p-10 text-center text-sm text-silver">پیامی فرستاده نشده.</li>}
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
 /* ───────────────────────── Shell ───────────────────────── */
 
 export default function Admin({ initial, role }) {
@@ -852,6 +1043,7 @@ export default function Admin({ initial, role }) {
     { id: 'servers', label: 'سرورهای بازی و RCON', icon: Crosshair, count: o.servers.length, C: GameServers, admin: true },
     { id: 'sales', label: 'فروش و درگاه', icon: Banknote, C: Sales, admin: true },
     { id: 'tickets', label: 'تیکت‌های پشتیبانی', icon: LifeBuoy, C: Tickets },
+    { id: 'messages', label: 'اعلان و پیام‌ها', icon: Megaphone, C: Messages, admin: true },
     { id: 'logs', label: 'لاگ امنیتی و API', icon: ScrollText, C: Logs },
     { id: 'settings', label: 'تنظیمات سایت', icon: SlidersHorizontal, C: Settings, admin: true },
   ];
